@@ -6,6 +6,7 @@ import { statusCommand } from './commands/status.js';
 import { configCommand } from './commands/config.js';
 import { setJsonMode } from './utils/output.js';
 
+loadDotenv({ path: '.env.local' });
 loadDotenv();
 
 const program = new Command();
