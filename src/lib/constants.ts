@@ -3,7 +3,7 @@ import { homedir } from 'os';
 
 export const CONFIG_DIR_NAME = '.shyft';
 export const CONFIG_FILE_NAME = 'config.json';
-export const DEFAULT_API_URL = 'https://api.shyft.io';
+export const DEFAULT_API_URL = 'https://api.shyft.dev';
 
 export const EXIT_CODES = {
   SUCCESS: 0,
@@ -16,5 +16,5 @@ export const EXIT_CODES = {
 } as const;
 
 export function getDefaultConfigDir(): string {
-  return join(homedir(), CONFIG_DIR_NAME);
+  return process.env.SHYFT_CONFIG_DIR || join(homedir(), CONFIG_DIR_NAME);
 }
