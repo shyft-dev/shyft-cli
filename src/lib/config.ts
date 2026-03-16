@@ -86,3 +86,8 @@ export function getConfigManager(): ConfigManager {
   }
   return defaultManager;
 }
+
+/** Reset the cached singleton (for testing). */
+export function resetConfigManager(): void {
+  defaultManager = undefined;
+}

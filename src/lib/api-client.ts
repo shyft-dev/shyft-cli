@@ -1,6 +1,7 @@
 import axios, { type AxiosInstance } from 'axios';
 import { getConfigManager } from './config.js';
 import { DEFAULT_API_URL } from './constants.js';
+import { shouldRefreshToken, refreshAccessToken } from './token-refresh.js';
 
 export class ApiClientError extends Error {
   code: string;
@@ -31,7 +32,7 @@ export function createApiClient(requireAuth = true): AxiosInstance {
   });
 
   if (requireAuth) {
-    client.interceptors.request.use((requestConfig) => {
+    client.interceptors.request.use(async (requestConfig) => {
       const mgr = getConfigManager();
       if (!mgr.isAuthenticated()) {
         throw new ApiClientError(
@@ -40,6 +41,19 @@ export function createApiClient(requireAuth = true): AxiosInstance {
           401,
         );
       }
+
+      // Proactive token refresh
+      if (shouldRefreshToken()) {
+        const refreshed = await refreshAccessToken();
+        if (!refreshed) {
+          throw new ApiClientError(
+            'Session expired. Run `shyft login` to re-authenticate.',
+            'auth_required',
+            401,
+          );
+        }
+      }
+
       const authHeader = mgr.getAuthHeader();
       if (authHeader) {
         requestConfig.headers.Authorization = authHeader;
