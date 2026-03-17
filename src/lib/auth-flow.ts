@@ -18,9 +18,7 @@ interface AuthSession {
 
 interface PollResponse {
   status: 'pending' | 'approved' | 'expired';
-  accessToken?: string;
-  refreshToken?: string;
-  expiresAt?: string;
+  apiKey?: string;
   userId?: string;
   email?: string;
   teamId?: string;
@@ -72,15 +70,13 @@ export async function runBrowserAuthFlow(): Promise<{ success: boolean; error?: 
           params: { token: session.pollToken },
         });
 
-        if (pollResponse.status === 'approved' && pollResponse.accessToken) {
+        if (pollResponse.status === 'approved' && pollResponse.apiKey) {
           await client.post('/cli-auth/sessions/claim', {
             pollToken: session.pollToken,
           });
 
           mgr.updateConfig({
-            accessToken: pollResponse.accessToken,
-            refreshToken: pollResponse.refreshToken,
-            expiresAt: pollResponse.expiresAt,
+            apiKey: pollResponse.apiKey,
             userId: pollResponse.userId,
             email: pollResponse.email,
             teamId: pollResponse.teamId,
