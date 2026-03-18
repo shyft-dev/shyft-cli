@@ -6,6 +6,7 @@ import { statusCommand } from './commands/status.js';
 import { configCommand } from './commands/config.js';
 import { contextCommand } from './commands/context.js';
 import { productsCommand } from './commands/products.js';
+import { featuresCommand } from './commands/features.js';
 import { setJsonMode } from './utils/output.js';
 
 loadDotenv({ path: '.env.local' });
@@ -31,6 +32,7 @@ program.addCommand(statusCommand);
 program.addCommand(configCommand);
 program.addCommand(contextCommand);
 program.addCommand(productsCommand);
+program.addCommand(featuresCommand);
 
 export function run(): void {
   program.parse();
