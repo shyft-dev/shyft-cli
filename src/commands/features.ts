@@ -1,4 +1,6 @@
 import { Command } from 'commander';
+import { createReadStream, existsSync as fileExists } from 'fs';
+import { basename } from 'path';
 import { getApiClient, ApiClientError } from '../lib/api-client.js';
 import { getContextManager } from '../lib/context.js';
 import { output, info, success, error, isJsonMode } from '../utils/output.js';
@@ -334,6 +336,48 @@ featuresCommand
       }
     } catch (err) {
       failSpinner('Failed to link PR.');
+      handleApiError(err);
+    }
+  });
+
+featuresCommand
+  .command('upload-doc [id]')
+  .description('Upload a document to a feature')
+  .requiredOption('--file <path>', 'Path to the file to upload')
+  .action(async (id: string | undefined, opts: { file: string }) => {
+    const ctx = getContextManager();
+    let featureId: string;
+    try {
+      featureId = ctx.resolveFeatureId(id);
+    } catch (err) {
+      error((err as Error).message);
+      process.exit(EXIT_CODES.VALIDATION_ERROR);
+    }
+
+    if (!fileExists(opts.file)) {
+      error(`File not found: ${opts.file}`);
+      process.exit(EXIT_CODES.VALIDATION_ERROR);
+    }
+
+    const spinner = startSpinner('Uploading document...');
+    try {
+      const client = getApiClient();
+      const FormData = (await import('form-data')).default;
+      const form = new FormData();
+      form.append('file', createReadStream(opts.file), basename(opts.file));
+
+      const { data } = await client.post(`/features/${featureId}/documents`, form, {
+        headers: form.getHeaders(),
+      });
+      succeedSpinner('Document uploaded.');
+
+      if (isJsonMode()) {
+        output(data);
+      } else {
+        success(`Document uploaded to feature ${featureId}`);
+      }
+    } catch (err) {
+      failSpinner('Failed to upload document.');
       handleApiError(err);
     }
   });
