@@ -4,6 +4,16 @@ import { output, info, error, isJsonMode } from '../utils/output.js';
 import { startSpinner, succeedSpinner, failSpinner } from '../utils/spinner.js';
 import { EXIT_CODES } from '../lib/constants.js';
 
+function handleApiError(err: unknown): never {
+  if (err instanceof ApiClientError) {
+    error(err.message);
+    if (err.status === 404) process.exit(EXIT_CODES.GENERAL_ERROR);
+    if (err.status === 401) process.exit(EXIT_CODES.AUTH_REQUIRED);
+    process.exit(EXIT_CODES.API_ERROR);
+  }
+  throw err;
+}
+
 export const productsCommand = new Command('products')
   .description('Manage products');
 
@@ -35,11 +45,7 @@ productsCommand
       }
     } catch (err) {
       failSpinner('Failed to fetch products.');
-      if (err instanceof ApiClientError) {
-        error(err.message);
-        process.exit(err.status === 401 ? EXIT_CODES.AUTH_REQUIRED : EXIT_CODES.API_ERROR);
-      }
-      throw err;
+      handleApiError(err);
     }
   });
 
@@ -70,13 +76,6 @@ productsCommand
       }
     } catch (err) {
       failSpinner('Failed to fetch product.');
-      if (err instanceof ApiClientError) {
-        error(err.message);
-        if (err.status === 404) {
-          process.exit(EXIT_CODES.GENERAL_ERROR);
-        }
-        process.exit(err.status === 401 ? EXIT_CODES.AUTH_REQUIRED : EXIT_CODES.API_ERROR);
-      }
-      throw err;
+      handleApiError(err);
     }
   });

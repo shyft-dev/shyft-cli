@@ -263,6 +263,7 @@ featuresCommand
       if (isJsonMode()) {
         output(data);
       } else {
+        // TODO: Format human-readable output once API response shape is finalized
         if (data && typeof data === 'object') {
           output(data);
         } else {
@@ -301,6 +302,7 @@ featuresCommand
           info('No plan history found.');
           return;
         }
+        // TODO: Format human-readable output once API response shape is finalized
         output(data);
       }
     } catch (err) {

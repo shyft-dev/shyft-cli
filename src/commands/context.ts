@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import { getContextManager } from '../lib/context.js';
 import { output, success, info, error, isJsonMode } from '../utils/output.js';
+import { EXIT_CODES } from '../lib/constants.js';
 
 export const contextCommand = new Command('context')
   .description('Manage active product/feature context for this directory')
@@ -44,7 +45,7 @@ contextCommand
   .action((opts: { product?: string; feature?: string }) => {
     if (!opts.product && !opts.feature) {
       error('Provide --product <id> and/or --feature <id>');
-      process.exit(1);
+      process.exit(EXIT_CODES.VALIDATION_ERROR);
     }
 
     const mgr = getContextManager();
