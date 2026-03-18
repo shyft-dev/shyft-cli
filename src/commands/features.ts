@@ -238,3 +238,102 @@ featuresCommand
       handleApiError(err);
     }
   });
+
+featuresCommand
+  .command('plan [id]')
+  .description('Generate an implementation plan for a feature')
+  .action(async (id?: string) => {
+    const ctx = getContextManager();
+    let featureId: string;
+    try {
+      featureId = ctx.resolveFeatureId(id);
+    } catch (err) {
+      error((err as Error).message);
+      process.exit(EXIT_CODES.VALIDATION_ERROR);
+    }
+
+    const spinner = startSpinner('Generating plan...');
+    try {
+      const client = getApiClient();
+      const { data } = await client.post(`/features/${featureId}/plan/generate`);
+      succeedSpinner('Plan generated.');
+
+      if (isJsonMode()) {
+        output(data);
+      } else {
+        if (data && typeof data === 'object') {
+          output(data);
+        } else {
+          success('Plan generated successfully.');
+        }
+      }
+    } catch (err) {
+      failSpinner('Failed to generate plan.');
+      handleApiError(err);
+    }
+  });
+
+featuresCommand
+  .command('plan-history [id]')
+  .description('Get plan version history for a feature')
+  .action(async (id?: string) => {
+    const ctx = getContextManager();
+    let featureId: string;
+    try {
+      featureId = ctx.resolveFeatureId(id);
+    } catch (err) {
+      error((err as Error).message);
+      process.exit(EXIT_CODES.VALIDATION_ERROR);
+    }
+
+    const spinner = startSpinner('Fetching plan history...');
+    try {
+      const client = getApiClient();
+      const { data } = await client.get(`/features/${featureId}/plan/history`);
+      succeedSpinner('Plan history loaded.');
+
+      if (isJsonMode()) {
+        output(data);
+      } else {
+        if (!data || (Array.isArray(data) && data.length === 0)) {
+          info('No plan history found.');
+          return;
+        }
+        output(data);
+      }
+    } catch (err) {
+      failSpinner('Failed to fetch plan history.');
+      handleApiError(err);
+    }
+  });
+
+featuresCommand
+  .command('link-pr [id]')
+  .description('Link a pull request to a feature')
+  .requiredOption('--url <url>', 'Full URL of the PR')
+  .action(async (id: string | undefined, opts: { url: string }) => {
+    const ctx = getContextManager();
+    let featureId: string;
+    try {
+      featureId = ctx.resolveFeatureId(id);
+    } catch (err) {
+      error((err as Error).message);
+      process.exit(EXIT_CODES.VALIDATION_ERROR);
+    }
+
+    const spinner = startSpinner('Linking PR...');
+    try {
+      const client = getApiClient();
+      const { data } = await client.post(`/features/${featureId}/link-pr`, { url: opts.url });
+      succeedSpinner('PR linked.');
+
+      if (isJsonMode()) {
+        output(data);
+      } else {
+        success(`PR linked to feature ${featureId}`);
+      }
+    } catch (err) {
+      failSpinner('Failed to link PR.');
+      handleApiError(err);
+    }
+  });
