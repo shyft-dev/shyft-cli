@@ -4,6 +4,7 @@ import { loginCommand } from './commands/login.js';
 import { logoutCommand } from './commands/logout.js';
 import { statusCommand } from './commands/status.js';
 import { configCommand } from './commands/config.js';
+import { contextCommand } from './commands/context.js';
 import { setJsonMode } from './utils/output.js';
 
 loadDotenv({ path: '.env.local' });
@@ -27,6 +28,7 @@ program.addCommand(loginCommand);
 program.addCommand(logoutCommand);
 program.addCommand(statusCommand);
 program.addCommand(configCommand);
+program.addCommand(contextCommand);
 
 export function run(): void {
   program.parse();
