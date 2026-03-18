@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { getApiClient, ApiClientError } from '../lib/api-client.js';
 import { getContextManager } from '../lib/context.js';
-import { output, info, error, isJsonMode } from '../utils/output.js';
+import { output, info, success, error, isJsonMode } from '../utils/output.js';
 import { startSpinner, succeedSpinner, failSpinner } from '../utils/spinner.js';
 import { EXIT_CODES } from '../lib/constants.js';
 
@@ -103,6 +103,138 @@ featuresCommand
       }
     } catch (err) {
       failSpinner('Failed to fetch feature.');
+      handleApiError(err);
+    }
+  });
+
+featuresCommand
+  .command('create')
+  .description('Create a new feature')
+  .requiredOption('--title <title>', 'Feature title')
+  .requiredOption('--intent <intent>', 'Feature intent description')
+  .option('--product <id>', 'Product ID')
+  .action(async (opts: { title: string; intent: string; product?: string }) => {
+    const ctx = getContextManager();
+    let productId: string;
+    try {
+      productId = ctx.resolveProductId(opts.product);
+    } catch (err) {
+      error((err as Error).message);
+      process.exit(EXIT_CODES.VALIDATION_ERROR);
+    }
+
+    const spinner = startSpinner('Creating feature...');
+    try {
+      const client = getApiClient();
+      const { data } = await client.post(`/products/${productId}/features`, {
+        title: opts.title,
+        intent: opts.intent,
+      });
+      succeedSpinner('Feature created.');
+
+      if (isJsonMode()) {
+        output(data);
+      } else {
+        success(`Feature created: ${data.id}`);
+        info(`  Title: ${data.title}`);
+        info(`  Stage: ${data.stage}`);
+      }
+    } catch (err) {
+      failSpinner('Failed to create feature.');
+      handleApiError(err);
+    }
+  });
+
+featuresCommand
+  .command('update [id]')
+  .description('Update a feature')
+  .option('--title <title>', 'New title')
+  .option('--stage <stage>', 'New stage (ideate, build, ship)')
+  .option('--intent <intent>', 'New intent description')
+  .option('--assignee <userId>', 'Assign to user ID')
+  .action(async (id: string | undefined, opts: { title?: string; stage?: string; intent?: string; assignee?: string }) => {
+    const ctx = getContextManager();
+    let featureId: string;
+    try {
+      featureId = ctx.resolveFeatureId(id);
+    } catch (err) {
+      error((err as Error).message);
+      process.exit(EXIT_CODES.VALIDATION_ERROR);
+    }
+
+    const body: Record<string, string> = {};
+    if (opts.title) body.title = opts.title;
+    if (opts.stage) body.stage = opts.stage;
+    if (opts.intent) body.intent = opts.intent;
+    if (opts.assignee) body.assignee = opts.assignee;
+
+    if (Object.keys(body).length === 0) {
+      error('Provide at least one field to update (--title, --stage, --intent, --assignee).');
+      process.exit(EXIT_CODES.VALIDATION_ERROR);
+    }
+
+    const spinner = startSpinner('Updating feature...');
+    try {
+      const client = getApiClient();
+      const { data } = await client.patch(`/features/${featureId}`, body);
+      succeedSpinner('Feature updated.');
+
+      if (isJsonMode()) {
+        output(data);
+      } else {
+        success(`Feature updated: ${data.id}`);
+        info(`  Title: ${data.title}`);
+        info(`  Stage: ${data.stage}`);
+      }
+    } catch (err) {
+      failSpinner('Failed to update feature.');
+      handleApiError(err);
+    }
+  });
+
+featuresCommand
+  .command('delete [id]')
+  .description('Delete a feature')
+  .option('--force', 'Skip confirmation prompt')
+  .action(async (id: string | undefined, opts: { force?: boolean }) => {
+    const ctx = getContextManager();
+    let featureId: string;
+    try {
+      featureId = ctx.resolveFeatureId(id);
+    } catch (err) {
+      error((err as Error).message);
+      process.exit(EXIT_CODES.VALIDATION_ERROR);
+    }
+
+    if (!opts.force && !isJsonMode()) {
+      const readline = await import('readline');
+      const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+      const answer = await new Promise<string>((resolve) => {
+        rl.question(`Delete feature ${featureId}? (y/N) `, resolve);
+      });
+      rl.close();
+      if (answer.toLowerCase() !== 'y') {
+        info('Cancelled.');
+        return;
+      }
+    } else if (isJsonMode() && !opts.force) {
+      error('Use --force to delete in JSON mode.');
+      process.exit(EXIT_CODES.VALIDATION_ERROR);
+    }
+
+    const spinner = startSpinner('Deleting feature...');
+    try {
+      const client = getApiClient();
+      await client.delete(`/features/${featureId}`);
+      succeedSpinner('Feature deleted.');
+
+      if (isJsonMode()) {
+        output({ deleted: featureId });
+      } else {
+        success(`Feature deleted: ${featureId}`);
+      }
+    } catch (err) {
+      failSpinner('Failed to delete feature.');
       handleApiError(err);
     }
   });
