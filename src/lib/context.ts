@@ -26,7 +26,7 @@ export function createContextManager(baseDir: string): ContextManager {
 
   function ensureDir(): void {
     if (!existsSync(contextDir)) {
-      mkdirSync(contextDir, { recursive: true });
+      mkdirSync(contextDir, { recursive: true, mode: 0o700 });
     }
   }
 
@@ -42,10 +42,10 @@ export function createContextManager(baseDir: string): ContextManager {
 
   function save(context: ShyftContext): void {
     ensureDir();
-    const clean: Record<string, string> = {};
+    const clean: ShyftContext = {};
     if (context.productId) clean.productId = context.productId;
     if (context.featureId) clean.featureId = context.featureId;
-    writeFileSync(contextPath, JSON.stringify(clean, null, 2), { encoding: 'utf-8' });
+    writeFileSync(contextPath, JSON.stringify(clean, null, 2), { encoding: 'utf-8', mode: 0o600 });
   }
 
   function setProduct(id: string): void {
@@ -93,9 +93,23 @@ export function createContextManager(baseDir: string): ContextManager {
     );
   }
 
-  return { load, setProduct, setFeature, clearFeature, clearProduct, clearAll, resolveProductId, resolveFeatureId };
+  return {
+    load, setProduct, setFeature,
+    clearFeature, clearProduct, clearAll,
+    resolveProductId, resolveFeatureId,
+  };
 }
 
+let defaultManager: ContextManager | undefined;
+
 export function getContextManager(): ContextManager {
-  return createContextManager(process.cwd());
+  if (!defaultManager) {
+    defaultManager = createContextManager(process.cwd());
+  }
+  return defaultManager;
+}
+
+/** Reset the cached singleton (for testing). */
+export function resetContextManager(): void {
+  defaultManager = undefined;
 }
