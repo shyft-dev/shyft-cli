@@ -3,4 +3,5 @@ dist/
 .turbo/
 .env
 .env.local
-.shyft/
+.shyft/context.json
+openapi.json
