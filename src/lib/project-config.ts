@@ -39,6 +39,7 @@ export function createProjectConfigManager(baseDir: string): ProjectConfigManage
   }
 
   function load(): ProjectConfig {
+    if (!existsSync(filePath)) return { ...DEFAULT_CONFIG };
     try {
       const raw = readFileSync(filePath, 'utf-8');
       const parsed = JSON.parse(raw);
@@ -50,7 +51,7 @@ export function createProjectConfigManager(baseDir: string): ProjectConfigManage
 
   function save(config: ProjectConfig): void {
     ensureDir();
-    writeFileSync(filePath, JSON.stringify(config, null, 2) + '\n', { mode: 0o600 });
+    writeFileSync(filePath, JSON.stringify(config, null, 2), { encoding: 'utf-8', mode: 0o600 });
   }
 
   function update(partial: Partial<ProjectConfig>): ProjectConfig {
@@ -85,6 +86,7 @@ export function getProjectConfigManager(): ProjectConfigManager {
   return defaultManager;
 }
 
+/** Reset the cached singleton (for testing). */
 export function resetProjectConfigManager(): void {
   defaultManager = undefined;
 }
