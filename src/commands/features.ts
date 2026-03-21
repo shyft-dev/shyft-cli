@@ -3,6 +3,7 @@ import { createReadStream, existsSync as fileExists } from 'fs';
 import { basename } from 'path';
 import { getApiClient, ApiClientError } from '../lib/api-client.js';
 import { getContextManager } from '../lib/context.js';
+import { getProjectConfigManager } from '../lib/project-config.js';
 import { output, info, success, error, isJsonMode } from '../utils/output.js';
 import { startSpinner, succeedSpinner, failSpinner } from '../utils/spinner.js';
 import { EXIT_CODES } from '../lib/constants.js';
@@ -27,10 +28,10 @@ featuresCommand
   .option('--stage <stage>', 'Filter by stage (ideate, build, ship)')
   .option('--assignee <userId>', 'Filter by assignee')
   .action(async (opts: { product?: string; stage?: string; assignee?: string }) => {
-    const ctx = getContextManager();
+    const projMgr = getProjectConfigManager();
     let productId: string;
     try {
-      productId = ctx.resolveProductId(opts.product);
+      productId = projMgr.resolveProductId(opts.product);
     } catch (err) {
       error((err as Error).message);
       process.exit(EXIT_CODES.VALIDATION_ERROR);
@@ -116,10 +117,10 @@ featuresCommand
   .requiredOption('--intent <intent>', 'Feature intent description')
   .option('--product <id>', 'Product ID')
   .action(async (opts: { title: string; intent: string; product?: string }) => {
-    const ctx = getContextManager();
+    const projMgr = getProjectConfigManager();
     let productId: string;
     try {
-      productId = ctx.resolveProductId(opts.product);
+      productId = projMgr.resolveProductId(opts.product);
     } catch (err) {
       error((err as Error).message);
       process.exit(EXIT_CODES.VALIDATION_ERROR);
