@@ -1,94 +1,95 @@
 import { Command } from 'commander';
 import { getContextManager } from '../lib/context.js';
+import { getProjectConfigManager } from '../lib/project-config.js';
 import { output, success, info, error, isJsonMode } from '../utils/output.js';
 import { EXIT_CODES } from '../lib/constants.js';
 
 export const contextCommand = new Command('context')
-  .description('Manage active product/feature context for this directory')
+  .description('Manage per-directory product and feature context')
   .action(() => {
     showContext();
   });
 
 function showContext(): void {
-  const ctx = getContextManager().load();
-  const hasContext = ctx.productId || ctx.featureId;
+  const projMgr = getProjectConfigManager();
+  const ctxMgr = getContextManager();
+  const projConfig = projMgr.load();
+  const userCtx = ctxMgr.load();
 
-  if (!hasContext) {
-    if (isJsonMode()) {
-      output({});
-    } else {
-      info('No active context. Run `shyft context set --product <id>` to set one.');
-    }
+  const merged = {
+    productId: projConfig.productId || null,
+    featureId: userCtx.featureId || null,
+  };
+
+  if (isJsonMode()) {
+    output(merged);
     return;
   }
 
-  if (isJsonMode()) {
-    output(ctx);
-  } else {
-    if (ctx.productId) info(`  Product: ${ctx.productId}`);
-    if (ctx.featureId) info(`  Feature: ${ctx.featureId}`);
+  if (!merged.productId && !merged.featureId) {
+    info('No context set. Use: shyft context set --product <id> --feature <id>');
+    return;
   }
+
+  if (merged.productId) info(`  Product: ${merged.productId}`);
+  if (merged.featureId) info(`  Feature: ${merged.featureId}`);
 }
 
 contextCommand
   .command('show')
-  .description('Show active product/feature context')
+  .description('Show current context')
   .action(() => {
     showContext();
   });
 
 contextCommand
   .command('set')
-  .description('Set active product and/or feature context')
-  .option('--product <id>', 'Set active product ID')
-  .option('--feature <id>', 'Set active feature ID')
-  .action((opts: { product?: string; feature?: string }) => {
+  .description('Set product or feature context')
+  .option('--product <id>', 'Set product ID (saved to project config)')
+  .option('--feature <id>', 'Set feature ID (saved to user context)')
+  .action((opts) => {
     if (!opts.product && !opts.feature) {
       error('Provide --product <id> and/or --feature <id>');
       process.exit(EXIT_CODES.VALIDATION_ERROR);
     }
 
-    const mgr = getContextManager();
-    if (opts.product) mgr.setProduct(opts.product);
-    if (opts.feature) mgr.setFeature(opts.feature);
+    if (opts.product) {
+      const projMgr = getProjectConfigManager();
+      projMgr.setProductId(opts.product);
+      success(`Product set to ${opts.product} (project config)`);
+    }
 
-    const ctx = mgr.load();
-    if (isJsonMode()) {
-      output(ctx);
-    } else {
-      if (opts.product) success(`Active product set to ${opts.product}`);
-      if (opts.feature) success(`Active feature set to ${opts.feature}`);
+    if (opts.feature) {
+      const ctxMgr = getContextManager();
+      ctxMgr.setFeature(opts.feature);
+      success(`Feature set to ${opts.feature} (user context)`);
     }
   });
 
 contextCommand
   .command('clear')
-  .description('Clear context (default: feature only)')
-  .option('--product', 'Clear product and feature context')
-  .option('--all', 'Clear all context')
-  .action((opts: { product?: boolean; all?: boolean }) => {
-    const mgr = getContextManager();
+  .description('Clear context')
+  .option('--product', 'Clear product (from project config)')
+  .option('--all', 'Clear everything')
+  .action((opts) => {
+    const projMgr = getProjectConfigManager();
+    const ctxMgr = getContextManager();
 
     if (opts.all) {
-      mgr.clearAll();
-      if (isJsonMode()) {
-        output({ cleared: 'all' });
-      } else {
-        success('Cleared all context.');
-      }
-    } else if (opts.product) {
-      mgr.clearProduct();
-      if (isJsonMode()) {
-        output({ cleared: 'product' });
-      } else {
-        success('Cleared product and feature context.');
-      }
-    } else {
-      mgr.clearFeature();
-      if (isJsonMode()) {
-        output({ cleared: 'feature' });
-      } else {
-        success('Cleared feature context.');
-      }
+      projMgr.update({ productId: undefined });
+      ctxMgr.clearAll();
+      success('All context cleared.');
+      return;
     }
+
+    if (opts.product) {
+      projMgr.update({ productId: undefined });
+      ctxMgr.clearAll();
+      success('Product and feature context cleared.');
+      return;
+    }
+
+    // Default: clear feature only
+    ctxMgr.clearFeature();
+    success('Feature context cleared.');
   });
