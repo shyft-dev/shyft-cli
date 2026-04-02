@@ -79,3 +79,34 @@ productsCommand
       handleApiError(err);
     }
   });
+
+productsCommand
+  .command('create')
+  .description('Create a new product')
+  .requiredOption('--name <name>', 'Product name')
+  .option('--description <desc>', 'Product description')
+  .action(async (opts) => {
+    const spinner = startSpinner('Creating product...');
+    try {
+      const client = getApiClient();
+      const payload: { name: string; description?: string } = { name: opts.name.trim() };
+      if (opts.description) {
+        payload.description = opts.description;
+      }
+      const { data } = await client.post('/products', payload);
+      succeedSpinner('Product created.');
+
+      if (isJsonMode()) {
+        output(data);
+      } else {
+        info('');
+        info(`  ID:          ${data.id}`);
+        info(`  Name:        ${data.name}`);
+        info(`  Description: ${data.description || '(none)'}`);
+        info('');
+      }
+    } catch (err) {
+      failSpinner('Failed to create product.');
+      handleApiError(err);
+    }
+  });
