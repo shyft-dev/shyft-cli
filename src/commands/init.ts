@@ -11,8 +11,9 @@ const ALL_PHASES = ['ideate', 'plan', 'build', 'verify'];
 export function buildCreateProductPayload(name: string, description: string): { name: string; description?: string } {
   const trimmedName = name.trim();
   const payload: { name: string; description?: string } = { name: trimmedName };
-  if (description) {
-    payload.description = description;
+  const trimmedDesc = description.trim();
+  if (trimmedDesc) {
+    payload.description = trimmedDesc;
   }
   return payload;
 }

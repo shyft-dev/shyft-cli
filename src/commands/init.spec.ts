@@ -22,10 +22,10 @@ describe('buildCreateProductPayload', () => {
     expect('description' in payload).toBe(false);
   });
 
-  test('omits description when only whitespace would remain but input is truthy', () => {
-    // description is truthy (non-empty string with spaces), so it is included
+  test('omits description when only whitespace', () => {
     const payload = buildCreateProductPayload('Product', '  ');
-    expect(payload.description).toBe('  ');
+    expect(payload).toEqual({ name: 'Product' });
+    expect('description' in payload).toBe(false);
   });
 });
 

@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import { getApiClient, ApiClientError } from '../lib/api-client.js';
+import { buildCreateProductPayload } from './init.js';
 import { output, info, error, isJsonMode } from '../utils/output.js';
 import { startSpinner, succeedSpinner, failSpinner } from '../utils/spinner.js';
 import { EXIT_CODES } from '../lib/constants.js';
@@ -89,10 +90,7 @@ productsCommand
     const spinner = startSpinner('Creating product...');
     try {
       const client = getApiClient();
-      const payload: { name: string; description?: string } = { name: opts.name.trim() };
-      if (opts.description) {
-        payload.description = opts.description;
-      }
+      const payload = buildCreateProductPayload(opts.name, opts.description || '');
       const { data } = await client.post('/products', payload);
       succeedSpinner('Product created.');
 
