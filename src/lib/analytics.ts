@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
+import { getApiClient } from './api-client.js';
 
 export interface PhaseState {
   startedAt: number;
@@ -112,4 +113,27 @@ export function createPhaseTracker(baseDir: string, sender: PhaseEventSender): P
   }
 
   return { getActivePhases, startPhase, endPhase };
+}
+
+export function createApiEventSender(): PhaseEventSender {
+  return {
+    async sendEvent(event: PhaseEvent): Promise<void> {
+      const client = getApiClient();
+      await client.post('/analytics/lifecycle/events', event);
+    },
+  };
+}
+
+let defaultTracker: PhaseTracker | undefined;
+
+export function getPhaseTracker(): PhaseTracker {
+  if (!defaultTracker) {
+    defaultTracker = createPhaseTracker(process.cwd(), createApiEventSender());
+  }
+  return defaultTracker;
+}
+
+/** Reset the cached singleton (for testing). */
+export function resetPhaseTracker(): void {
+  defaultTracker = undefined;
 }

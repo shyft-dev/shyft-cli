@@ -79,3 +79,85 @@ describe('PhaseTracker state management', () => {
     expect(tracker.getActivePhases()).toEqual({});
   });
 });
+
+describe('PhaseTracker event sending', () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = join(tmpdir(), `shyft-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(tempDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  test('startPhase sends phase_started event', async () => {
+    const events: any[] = [];
+    const sender = { sendEvent: async (e: any) => { events.push(e); } };
+    const tracker = createPhaseTracker(tempDir, sender);
+    await tracker.startPhase('ideate', 'prod_1', 'feat_1');
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      productId: 'prod_1',
+      featureId: 'feat_1',
+      eventType: 'phase_started',
+      phase: 'ideate',
+      source: 'cli',
+    });
+  });
+
+  test('endPhase sends phase_completed event with durationMs', async () => {
+    const events: any[] = [];
+    const sender = { sendEvent: async (e: any) => { events.push(e); } };
+    const tracker = createPhaseTracker(tempDir, sender);
+    await tracker.startPhase('build', 'prod_1');
+    events.length = 0; // clear the start event
+    await tracker.endPhase('build');
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      productId: 'prod_1',
+      eventType: 'phase_completed',
+      phase: 'build',
+      source: 'cli',
+    });
+    expect(events[0].durationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  test('startPhase does not throw when sendEvent fails', async () => {
+    const sender = { sendEvent: async () => { throw new Error('network fail'); } };
+    const tracker = createPhaseTracker(tempDir, sender);
+    // Should not throw
+    await tracker.startPhase('plan', 'prod_1');
+    const phases = tracker.getActivePhases();
+    expect(phases.plan).toBeDefined();
+  });
+
+  test('endPhase does not throw when sendEvent fails', async () => {
+    let callCount = 0;
+    const sender = { sendEvent: async () => { callCount++; if (callCount > 1) throw new Error('fail'); } };
+    const tracker = createPhaseTracker(tempDir, sender);
+    await tracker.startPhase('verify', 'prod_1');
+    const result = await tracker.endPhase('verify');
+    expect(result).not.toBeNull();
+    expect(result!.phase).toBe('verify');
+  });
+
+  test('startPhase passes metadata through', async () => {
+    const events: any[] = [];
+    const sender = { sendEvent: async (e: any) => { events.push(e); } };
+    const tracker = createPhaseTracker(tempDir, sender);
+    await tracker.startPhase('ideate', 'prod_1', undefined, { iteration: 2 });
+    expect(events[0].metadata).toEqual({ iteration: 2 });
+  });
+
+  test('endPhase passes metadata through', async () => {
+    const events: any[] = [];
+    const sender = { sendEvent: async (e: any) => { events.push(e); } };
+    const tracker = createPhaseTracker(tempDir, sender);
+    await tracker.startPhase('build', 'prod_1');
+    events.length = 0;
+    await tracker.endPhase('build', { linesChanged: 42 });
+    expect(events[0].metadata).toEqual({ linesChanged: 42 });
+  });
+});
