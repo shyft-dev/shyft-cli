@@ -56,18 +56,23 @@ bun run typecheck
 echo "==> Running tests..."
 bun test
 
-# 5. Build sanity check
+# 5. Build dist/ (committed to repo so git-installs work without a prepare step)
 echo "==> Building..."
 bun run build
 
-# 6. Bump version and create git tag
+# 6. Bump version in package.json (no commit/tag yet)
 echo "==> Bumping version ($BUMP)..."
-npm version "$BUMP" --message "chore: release v%s"
+npm version "$BUMP" --no-git-tag-version
 
 NEW_VERSION="$(node -p "require('./package.json').version")"
 TAG="v$NEW_VERSION"
 
-# 7. Push commit and tag
+# 7. Commit version bump + built dist/, then tag
+echo "==> Committing release $TAG..."
+git add package.json dist/
+git commit -m "chore: release $TAG"
+git tag -a "$TAG" -m "release $TAG"
+
 echo "==> Pushing commit and tag $TAG..."
 git push origin main
 git push origin "$TAG"
