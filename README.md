@@ -1,17 +1,30 @@
-# @shyft/cli
+# @shyft-dev/cli
 
 Command-line interface for the Shyft platform.
 
 ## Installation
 
+Install the latest release directly from GitHub (pin to a released tag):
+
 ```bash
-bun install
-bun run build
+npm install -g github:shyft-dev/shyft-cli#v0.1.0
 ```
 
-To make the CLI available globally, link it:
+This requires access to the `shyft-dev/shyft-cli` repository. npm will clone
+the repo and build on install — Node 18+ and npm are the only requirements.
+
+### For beta testers
+
+Always pin to a released tag (e.g. `#v0.2.0`) rather than installing from
+`main`. To upgrade, rerun the install command with the new tag.
+
+### Local development install
 
 ```bash
+git clone git@github.com:shyft-dev/shyft-cli.git
+cd shyft-cli
+bun install
+bun run build
 bun link
 ```
 
@@ -82,7 +95,7 @@ shyft config reset
 
 ## Configuration
 
-Configuration is stored at `~/.shyft/config.json`. The API endpoint defaults to `https://api.shyft.io` and can be overridden via:
+Configuration is stored at `~/.shyft/config.json`. The API endpoint defaults to `https://api.shyft.dev` and can be overridden via:
 
 - `shyft config set apiUrl <url>`
 - The `SHYFT_API_URL` environment variable
