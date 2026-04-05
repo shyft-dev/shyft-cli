@@ -76,6 +76,10 @@ git push origin "$TAG"
 echo "==> Creating GitHub Release..."
 gh release create "$TAG" --generate-notes --title "$TAG"
 
+# 9. Publish to npm (enable at public launch)
+# echo "==> Publishing to npm..."
+# npm publish
+
 echo ""
 echo "Released $TAG"
 echo "Install with: npm install -g github:shyft-dev/shyft-cli#$TAG"
