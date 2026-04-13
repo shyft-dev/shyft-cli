@@ -7,11 +7,16 @@ Command-line interface for the Shyft platform.
 Install the latest release directly from GitHub (pin to a released tag):
 
 ```bash
-npm install -g github:shyft-dev/shyft-cli#v0.1.0
+npm install -g github:shyft-dev/shyft-cli#v0.4.1 --install-links
 ```
 
-This requires access to the `shyft-dev/shyft-cli` repository. npm will clone
-the repo and build on install — Node 18+ and npm are the only requirements.
+This requires access to the `shyft-dev/shyft-cli` repository. Node 18+ and
+npm are the only requirements.
+
+> The `--install-links` flag is required. Without it, npm 10 creates a
+> broken symlink to a temporary cache directory when installing scoped
+> packages globally from git URLs ([npm/cli#4421](https://github.com/npm/cli/issues/4421)).
+> This flag forces npm to copy package files instead.
 
 ### For beta testers
 

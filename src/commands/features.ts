@@ -258,7 +258,7 @@ featuresCommand
     const spinner = startSpinner('Generating plan...');
     try {
       const client = getApiClient();
-      const { data } = await client.post(`/features/${featureId}/plan/generate`);
+      const { data } = await client.post(`/features/${featureId}/plan/generate`, {});
       succeedSpinner('Plan generated.');
 
       if (isJsonMode()) {
