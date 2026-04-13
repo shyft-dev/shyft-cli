@@ -37,7 +37,7 @@ export async function runBrowserAuthFlow(): Promise<{ success: boolean; error?: 
     startSpinner('Creating auth session...');
 
     const { data: session } = await client.post<AuthSession>('/cli-auth/sessions', {
-      cliVersion: '0.1.0',
+      cliVersion: __CLI_VERSION__,
       os: `${platform()} ${release()}`,
       hostname: hostname(),
     });

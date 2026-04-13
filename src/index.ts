@@ -19,7 +19,7 @@ const program = new Command();
 program
   .name('shyft')
   .description('CLI for the Shyft platform')
-  .version('0.1.0')
+  .version(__CLI_VERSION__)
   .option('--json', 'Output in JSON format')
   .hook('preAction', (thisCommand) => {
     const opts = thisCommand.opts();
