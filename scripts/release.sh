@@ -56,16 +56,17 @@ bun run typecheck
 echo "==> Running tests..."
 bun test
 
-# 5. Build dist/ (committed to repo so git-installs work without a prepare step)
-echo "==> Building..."
-bun run build
-
-# 6. Bump version in package.json (no commit/tag yet)
+# 5. Bump version in package.json (no commit/tag yet — must happen before build
+#    so tsup injects the new version into dist/ via __CLI_VERSION__)
 echo "==> Bumping version ($BUMP)..."
 npm version "$BUMP" --no-git-tag-version
 
 NEW_VERSION="$(node -p "require('./package.json').version")"
 TAG="v$NEW_VERSION"
+
+# 6. Build dist/ (committed to repo so git-installs work without a prepare step)
+echo "==> Building $TAG..."
+bun run build
 
 # 7. Commit version bump + built dist/, then tag
 echo "==> Committing release $TAG..."
