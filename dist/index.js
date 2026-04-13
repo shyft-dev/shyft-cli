@@ -1112,7 +1112,7 @@ featuresCommand.command("plan [id]").description("Generate an implementation pla
   const spinner = startSpinner("Generating plan...");
   try {
     const client = getApiClient();
-    const { data } = await client.post(`/features/${featureId}/plan/generate`);
+    const { data } = await client.post(`/features/${featureId}/plan/generate`, {});
     succeedSpinner("Plan generated.");
     if (isJsonMode()) {
       output(data);
