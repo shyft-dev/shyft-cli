@@ -8,6 +8,9 @@ Install the latest release directly from GitHub (pin to a released tag):
 
 ```bash
 npm install -g github:shyft-dev/shyft-cli#v0.4.1 --install-links
+
+npm uninstall -g @shyft-dev/cli
+
 ```
 
 This requires access to the `shyft-dev/shyft-cli` repository. Node 18+ and
