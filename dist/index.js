@@ -678,6 +678,281 @@ contextCommand.command("clear").description("Clear context").option("--product",
   ctxMgr.clearFeature();
   success("Feature context cleared.");
 });
+function handleApiError(err) {
+  if (err instanceof ApiClientError) {
+    error(err.message);
+    if (err.status === 404) process.exit(EXIT_CODES.GENERAL_ERROR);
+    if (err.status === 401) process.exit(EXIT_CODES.AUTH_REQUIRED);
+    process.exit(EXIT_CODES.API_ERROR);
+  }
+  throw err;
+}
+function resolveProduct(explicit) {
+  const projMgr = getProjectConfigManager();
+  return projMgr.resolveProductId(explicit);
+}
+contextCommand.command("overview").description("Get product context overview").option("--product <id>", "Product ID (defaults to project config)").action(async (opts) => {
+  let productId;
+  try {
+    productId = resolveProduct(opts.product);
+  } catch (err) {
+    error(err.message);
+    process.exit(EXIT_CODES.VALIDATION_ERROR);
+  }
+  const spinner = startSpinner("Fetching product overview...");
+  try {
+    const client = getApiClient();
+    const { data } = await client.get(`/products/${productId}/context/overview`);
+    succeedSpinner("Product overview loaded.");
+    if (isJsonMode()) {
+      output(data);
+    } else {
+      info("");
+      info(`  Product:      ${data.product.name}`);
+      info(`  Description:  ${data.product.description || "(none)"}`);
+      info(`  Vision:       ${data.product.vision || "(none)"}`);
+      info("");
+      info("  Feature Counts:");
+      const fc = data.featureCounts || {};
+      info(`    Ideate: ${fc.ideate ?? 0}   Build: ${fc.build ?? 0}   Ship: ${fc.ship ?? 0}`);
+      info("");
+      if (data.repositories && data.repositories.length > 0) {
+        info("  Repositories:");
+        for (const repo of data.repositories) {
+          info(`    - ${repo.name}`);
+          if (repo.architectureExcerpt) {
+            const excerpt = repo.architectureExcerpt.slice(0, 120).replace(/\n/g, " ");
+            info(`      ${excerpt}${repo.architectureExcerpt.length > 120 ? "..." : ""}`);
+          }
+        }
+      } else {
+        info("  Repositories: (none)");
+      }
+      info("");
+    }
+  } catch (err) {
+    failSpinner("Failed to fetch product overview.");
+    handleApiError(err);
+  }
+});
+contextCommand.command("features").description("List product features for context analysis").option("--product <id>", "Product ID (defaults to project config)").option("--stage <stage>", "Filter by stage (ideate, build, ship)").action(async (opts) => {
+  let productId;
+  try {
+    productId = resolveProduct(opts.product);
+  } catch (err) {
+    error(err.message);
+    process.exit(EXIT_CODES.VALIDATION_ERROR);
+  }
+  const spinner = startSpinner("Fetching features...");
+  try {
+    const client = getApiClient();
+    const params = {};
+    if (opts.stage) params.stage = opts.stage;
+    const { data } = await client.get(`/products/${productId}/context/features`, { params });
+    succeedSpinner("Features loaded.");
+    if (isJsonMode()) {
+      output(data);
+    } else {
+      if (!data.features || data.features.length === 0) {
+        info("No features found.");
+        return;
+      }
+      info("");
+      info(`  ${"ID".padEnd(28)} ${"Stage".padEnd(8)} ${"Title".padEnd(30)} Affected Areas`);
+      info(`  ${"\u2500".repeat(28)} ${"\u2500".repeat(8)} ${"\u2500".repeat(30)} ${"\u2500".repeat(20)}`);
+      for (const f of data.features) {
+        const areas = (f.affectedAreas || []).join(", ") || "\u2014";
+        info(`  ${String(f.id).padEnd(28)} ${String(f.stage).padEnd(8)} ${String(f.title).slice(0, 30).padEnd(30)} ${areas}`);
+      }
+      info(`
+  Total: ${data.total}`);
+      info("");
+    }
+  } catch (err) {
+    failSpinner("Failed to fetch features.");
+    handleApiError(err);
+  }
+});
+contextCommand.command("feature <featureId>").description("Get full feature detail for conflict analysis").option("--product <id>", "Product ID (defaults to project config)").action(async (featureId, opts) => {
+  let productId;
+  try {
+    productId = resolveProduct(opts.product);
+  } catch (err) {
+    error(err.message);
+    process.exit(EXIT_CODES.VALIDATION_ERROR);
+  }
+  const spinner = startSpinner("Fetching feature detail...");
+  try {
+    const client = getApiClient();
+    const { data } = await client.get(`/products/${productId}/context/features/${featureId}`);
+    succeedSpinner("Feature detail loaded.");
+    if (isJsonMode()) {
+      output(data);
+    } else {
+      info("");
+      info(`  ID:      ${data.id}`);
+      info(`  Title:   ${data.title}`);
+      info(`  Intent:  ${data.intent || "(none)"}`);
+      info(`  Stage:   ${data.stage}`);
+      if (data.plan) {
+        info("");
+        info("  Plan:");
+        info(`    Overview:    ${data.plan.overview}`);
+        info(`    Complexity:  ${data.plan.estimatedComplexity}`);
+        if (data.plan.steps?.length) {
+          info("    Steps:");
+          for (const step of data.plan.steps) {
+            info(`      - ${step.title}: ${step.description}`);
+          }
+        }
+        const files = data.plan.files || {};
+        if (files.create?.length) info(`    Create: ${files.create.join(", ")}`);
+        if (files.modify?.length) info(`    Modify: ${files.modify.join(", ")}`);
+        if (files.delete?.length) info(`    Delete: ${files.delete.join(", ")}`);
+        if (data.plan.affectedAreas?.length) {
+          info(`    Affected Areas: ${data.plan.affectedAreas.join(", ")}`);
+        }
+      }
+      if (data.linkedPRs?.length) {
+        info("");
+        info("  Linked PRs:");
+        for (const pr of data.linkedPRs) {
+          info(`    - #${pr.number} (${pr.status}) ${pr.url}`);
+        }
+      }
+      if (data.externalSync) {
+        info(`  External: ${data.externalSync.source} \u2014 ${data.externalSync.externalUrl}`);
+      }
+      info("");
+    }
+  } catch (err) {
+    failSpinner("Failed to fetch feature detail.");
+    handleApiError(err);
+  }
+});
+contextCommand.command("architecture").description("Get architecture docs for linked repositories").option("--product <id>", "Product ID (defaults to project config)").option("--repo <id>", "Filter to a specific repository").option("--section <name>", "Filter to a section (ARCHITECTURE, CONVENTIONS, STRUCTURE, STACK)").action(async (opts) => {
+  let productId;
+  try {
+    productId = resolveProduct(opts.product);
+  } catch (err) {
+    error(err.message);
+    process.exit(EXIT_CODES.VALIDATION_ERROR);
+  }
+  const spinner = startSpinner("Fetching architecture docs...");
+  try {
+    const client = getApiClient();
+    const params = {};
+    if (opts.repo) params.repoId = opts.repo;
+    if (opts.section) params.section = opts.section;
+    const { data } = await client.get(`/products/${productId}/context/architecture`, { params });
+    succeedSpinner("Architecture docs loaded.");
+    if (isJsonMode()) {
+      output(data);
+    } else {
+      if (!data.repositories || data.repositories.length === 0) {
+        info("No architecture docs found.");
+        return;
+      }
+      for (const repo of data.repositories) {
+        info("");
+        info(`  Repository: ${repo.repoName} (${repo.repoId})`);
+        info(`  ${"\u2500".repeat(60)}`);
+        const sections = repo.sections || {};
+        const keys = Object.keys(sections);
+        if (keys.length === 0) {
+          info("    (no sections available)");
+        } else {
+          for (const key of keys) {
+            info(`
+  [${key}]`);
+            info(`  ${sections[key]}`);
+          }
+        }
+      }
+      info("");
+    }
+  } catch (err) {
+    failSpinner("Failed to fetch architecture docs.");
+    handleApiError(err);
+  }
+});
+contextCommand.command("plans").description("Get active implementation plans (features in build stage)").option("--product <id>", "Product ID (defaults to project config)").action(async (opts) => {
+  let productId;
+  try {
+    productId = resolveProduct(opts.product);
+  } catch (err) {
+    error(err.message);
+    process.exit(EXIT_CODES.VALIDATION_ERROR);
+  }
+  const spinner = startSpinner("Fetching active plans...");
+  try {
+    const client = getApiClient();
+    const { data } = await client.get(`/products/${productId}/context/plans`);
+    succeedSpinner("Plans loaded.");
+    if (isJsonMode()) {
+      output(data);
+    } else {
+      if (!data.plans || data.plans.length === 0) {
+        info("No active plans found.");
+        return;
+      }
+      for (const entry of data.plans) {
+        info("");
+        info(`  Feature: ${entry.featureTitle} (${entry.featureId})`);
+        info(`  Build:   ${entry.build.status} \u2014 step ${entry.build.currentStep}/${entry.build.totalSteps}`);
+        if (entry.build.branchName) info(`  Branch:  ${entry.build.branchName}`);
+        if (entry.plan) {
+          info(`  Plan:    ${entry.plan.overview}`);
+          if (entry.plan.affectedAreas?.length) {
+            info(`  Areas:   ${entry.plan.affectedAreas.join(", ")}`);
+          }
+        }
+        info(`  ${"\u2500".repeat(60)}`);
+      }
+      info("");
+    }
+  } catch (err) {
+    failSpinner("Failed to fetch plans.");
+    handleApiError(err);
+  }
+});
+contextCommand.command("search <query>").description("Semantic code search across product repositories").option("--product <id>", "Product ID (defaults to project config)").option("--limit <n>", "Max results (default 10, max 50)", "10").action(async (query, opts) => {
+  let productId;
+  try {
+    productId = resolveProduct(opts.product);
+  } catch (err) {
+    error(err.message);
+    process.exit(EXIT_CODES.VALIDATION_ERROR);
+  }
+  const limit = Math.min(Math.max(parseInt(opts.limit, 10) || 10, 1), 50);
+  const spinner = startSpinner("Searching codebase...");
+  try {
+    const client = getApiClient();
+    const { data } = await client.post(`/products/${productId}/context/search`, { query, limit });
+    succeedSpinner("Search complete.");
+    if (isJsonMode()) {
+      output(data);
+    } else {
+      if (!data.results || data.results.length === 0) {
+        info("No results found.");
+        return;
+      }
+      info("");
+      for (const r of data.results) {
+        const score = (r.score * 100).toFixed(1);
+        info(`  ${r.filePath}:${r.startLine}-${r.endLine}  ${r.nodeName} (${r.nodeKind})  [${score}%]`);
+        if (r.content) {
+          const preview = r.content.split("\n").slice(0, 3).join("\n    ");
+          info(`    ${preview}`);
+        }
+        info("");
+      }
+    }
+  } catch (err) {
+    failSpinner("Search failed.");
+    handleApiError(err);
+  }
+});
 
 // src/commands/products.ts
 import { Command as Command7 } from "commander";
@@ -825,7 +1100,7 @@ var initCommand = new Command6("init").description("Initialize Shyft project con
 });
 
 // src/commands/products.ts
-function handleApiError(err) {
+function handleApiError2(err) {
   if (err instanceof ApiClientError) {
     error(err.message);
     if (err.status === 404) process.exit(EXIT_CODES.GENERAL_ERROR);
@@ -859,7 +1134,7 @@ productsCommand.command("list").description("List all products").action(async ()
     }
   } catch (err) {
     failSpinner("Failed to fetch products.");
-    handleApiError(err);
+    handleApiError2(err);
   }
 });
 productsCommand.command("get <id>").description("Get product by ID").action(async (id) => {
@@ -885,7 +1160,7 @@ productsCommand.command("get <id>").description("Get product by ID").action(asyn
     }
   } catch (err) {
     failSpinner("Failed to fetch product.");
-    handleApiError(err);
+    handleApiError2(err);
   }
 });
 productsCommand.command("create").description("Create a new product").requiredOption("--name <name>", "Product name").option("--description <desc>", "Product description").action(async (opts) => {
@@ -906,7 +1181,7 @@ productsCommand.command("create").description("Create a new product").requiredOp
     }
   } catch (err) {
     failSpinner("Failed to create product.");
-    handleApiError(err);
+    handleApiError2(err);
   }
 });
 
@@ -914,7 +1189,7 @@ productsCommand.command("create").description("Create a new product").requiredOp
 import { Command as Command8 } from "commander";
 import { createReadStream, existsSync as fileExists } from "fs";
 import { basename } from "path";
-function handleApiError2(err) {
+function handleApiError3(err) {
   if (err instanceof ApiClientError) {
     error(err.message);
     if (err.status === 404) process.exit(EXIT_CODES.GENERAL_ERROR);
@@ -958,7 +1233,7 @@ featuresCommand.command("list").description("List features for a product").optio
     }
   } catch (err) {
     failSpinner("Failed to fetch features.");
-    handleApiError2(err);
+    handleApiError3(err);
   }
 });
 featuresCommand.command("get [id]").description("Get feature by ID").action(async (id) => {
@@ -994,7 +1269,7 @@ featuresCommand.command("get [id]").description("Get feature by ID").action(asyn
     }
   } catch (err) {
     failSpinner("Failed to fetch feature.");
-    handleApiError2(err);
+    handleApiError3(err);
   }
 });
 featuresCommand.command("create").description("Create a new feature").requiredOption("--title <title>", "Feature title").requiredOption("--intent <intent>", "Feature intent description").option("--product <id>", "Product ID").action(async (opts) => {
@@ -1023,7 +1298,7 @@ featuresCommand.command("create").description("Create a new feature").requiredOp
     }
   } catch (err) {
     failSpinner("Failed to create feature.");
-    handleApiError2(err);
+    handleApiError3(err);
   }
 });
 featuresCommand.command("update [id]").description("Update a feature").option("--title <title>", "New title").option("--stage <stage>", "New stage (ideate, build, ship)").option("--intent <intent>", "New intent description").option("--assignee <userId>", "Assign to user ID").action(async (id, opts) => {
@@ -1058,7 +1333,7 @@ featuresCommand.command("update [id]").description("Update a feature").option("-
     }
   } catch (err) {
     failSpinner("Failed to update feature.");
-    handleApiError2(err);
+    handleApiError3(err);
   }
 });
 featuresCommand.command("delete [id]").description("Delete a feature").option("--force", "Skip confirmation prompt").action(async (id, opts) => {
@@ -1097,7 +1372,7 @@ featuresCommand.command("delete [id]").description("Delete a feature").option("-
     }
   } catch (err) {
     failSpinner("Failed to delete feature.");
-    handleApiError2(err);
+    handleApiError3(err);
   }
 });
 featuresCommand.command("plan [id]").description("Generate an implementation plan for a feature").action(async (id) => {
@@ -1125,7 +1400,7 @@ featuresCommand.command("plan [id]").description("Generate an implementation pla
     }
   } catch (err) {
     failSpinner("Failed to generate plan.");
-    handleApiError2(err);
+    handleApiError3(err);
   }
 });
 featuresCommand.command("plan-history [id]").description("Get plan version history for a feature").action(async (id) => {
@@ -1153,7 +1428,7 @@ featuresCommand.command("plan-history [id]").description("Get plan version histo
     }
   } catch (err) {
     failSpinner("Failed to fetch plan history.");
-    handleApiError2(err);
+    handleApiError3(err);
   }
 });
 featuresCommand.command("link-pr [id]").description("Link a pull request to a feature").requiredOption("--url <url>", "Full URL of the PR").action(async (id, opts) => {
@@ -1177,7 +1452,7 @@ featuresCommand.command("link-pr [id]").description("Link a pull request to a fe
     }
   } catch (err) {
     failSpinner("Failed to link PR.");
-    handleApiError2(err);
+    handleApiError3(err);
   }
 });
 featuresCommand.command("upload-doc [id]").description("Upload a document to a feature").requiredOption("--file <path>", "Path to the file to upload").action(async (id, opts) => {
@@ -1210,7 +1485,7 @@ featuresCommand.command("upload-doc [id]").description("Upload a document to a f
     }
   } catch (err) {
     failSpinner("Failed to upload document.");
-    handleApiError2(err);
+    handleApiError3(err);
   }
 });
 
