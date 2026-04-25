@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { createReadStream, existsSync as fileExists } from 'fs';
+import { createReadStream, existsSync as fileExists, readFileSync } from 'fs';
 import { basename } from 'path';
 import { getApiClient, ApiClientError } from '../lib/api-client.js';
 import { getContextManager } from '../lib/context.js';
@@ -8,9 +8,13 @@ import { output, info, success, error, isJsonMode } from '../utils/output.js';
 import { startSpinner, succeedSpinner, failSpinner } from '../utils/spinner.js';
 import { EXIT_CODES } from '../lib/constants.js';
 
-function handleApiError(err: unknown): never {
+function handleApiError(err: unknown, context?: { conflictMessage?: string }): never {
   if (err instanceof ApiClientError) {
-    error(err.message);
+    if (err.status === 409 && context?.conflictMessage) {
+      error(context.conflictMessage);
+    } else {
+      error(err.message);
+    }
     if (err.status === 404) process.exit(EXIT_CODES.GENERAL_ERROR);
     if (err.status === 401) process.exit(EXIT_CODES.AUTH_REQUIRED);
     process.exit(EXIT_CODES.API_ERROR);
@@ -154,8 +158,9 @@ featuresCommand
   .option('--title <title>', 'New title')
   .option('--stage <stage>', 'New stage (ideate, build, ship)')
   .option('--intent <intent>', 'New intent description')
+  .option('--file <path>', 'Path to a file whose contents will be used as the intent/spec')
   .option('--assignee <userId>', 'Assign to user ID')
-  .action(async (id: string | undefined, opts: { title?: string; stage?: string; intent?: string; assignee?: string }) => {
+  .action(async (id: string | undefined, opts: { title?: string; stage?: string; intent?: string; file?: string; assignee?: string }) => {
     const ctx = getContextManager();
     let featureId: string;
     try {
@@ -165,6 +170,16 @@ featuresCommand
       process.exit(EXIT_CODES.VALIDATION_ERROR);
     }
 
+    if (opts.file) {
+      if (!fileExists(opts.file)) {
+        error(`File not found: ${opts.file}`);
+        process.exit(EXIT_CODES.VALIDATION_ERROR);
+      }
+      if (!opts.intent) {
+        opts.intent = readFileSync(opts.file, 'utf-8');
+      }
+    }
+
     const body: Record<string, string> = {};
     if (opts.title) body.title = opts.title;
     if (opts.stage) body.stage = opts.stage;
@@ -172,7 +187,7 @@ featuresCommand
     if (opts.assignee) body.assignee = opts.assignee;
 
     if (Object.keys(body).length === 0) {
-      error('Provide at least one field to update (--title, --stage, --intent, --assignee).');
+      error('Provide at least one field to update (--title, --stage, --intent, --file, --assignee).');
       process.exit(EXIT_CODES.VALIDATION_ERROR);
     }
 
@@ -308,6 +323,82 @@ featuresCommand
       }
     } catch (err) {
       failSpinner('Failed to fetch plan history.');
+      handleApiError(err);
+    }
+  });
+
+featuresCommand
+  .command('plan-write [id]')
+  .description('Write plan content for a feature')
+  .requiredOption('--file <path>', 'Path to the plan markdown file')
+  .option('--allow-overwrite', 'Overwrite an existing draft plan', false)
+  .action(async (id: string | undefined, opts: { file: string; allowOverwrite: boolean }) => {
+    const ctx = getContextManager();
+    let featureId: string;
+    try {
+      featureId = ctx.resolveFeatureId(id);
+    } catch (err) {
+      error((err as Error).message);
+      process.exit(EXIT_CODES.VALIDATION_ERROR);
+    }
+
+    if (!fileExists(opts.file)) {
+      error(`File not found: ${opts.file}`);
+      process.exit(EXIT_CODES.VALIDATION_ERROR);
+    }
+
+    const content = readFileSync(opts.file, 'utf-8');
+
+    const spinner = startSpinner('Writing plan...');
+    try {
+      const client = getApiClient();
+      const { data } = await client.put(`/features/${featureId}/plan`, {
+        content,
+        allowOverwrite: opts.allowOverwrite,
+      });
+      succeedSpinner('Plan written.');
+
+      if (isJsonMode()) {
+        output(data);
+      } else {
+        success(`Plan written for feature ${featureId}`);
+      }
+    } catch (err) {
+      failSpinner('Failed to write plan.');
+      handleApiError(err, {
+        conflictMessage: `A draft plan already exists for feature ${featureId}. Use --allow-overwrite to replace it.`,
+      });
+    }
+  });
+
+featuresCommand
+  .command('plan-approve [id]')
+  .description('Approve the current draft plan for a feature')
+  .action(async (id?: string) => {
+    const ctx = getContextManager();
+    let featureId: string;
+    try {
+      featureId = ctx.resolveFeatureId(id);
+    } catch (err) {
+      error((err as Error).message);
+      process.exit(EXIT_CODES.VALIDATION_ERROR);
+    }
+
+    const spinner = startSpinner('Approving plan...');
+    try {
+      const client = getApiClient();
+      const { data } = await client.patch(`/features/${featureId}/plan/approve`);
+      succeedSpinner('Plan approved.');
+
+      if (isJsonMode()) {
+        output(data);
+      } else {
+        success(`Plan approved for feature ${featureId}`);
+        info(`  Title: ${data.title}`);
+        info(`  Stage: ${data.stage}`);
+      }
+    } catch (err) {
+      failSpinner('Failed to approve plan.');
       handleApiError(err);
     }
   });
