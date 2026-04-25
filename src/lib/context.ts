@@ -1,8 +1,10 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
+import type { PhaseState } from './analytics.js';
 
 export interface ShyftContext {
   featureId?: string;
+  activePhases?: Record<string, PhaseState>;
 }
 
 export interface ContextManager {
@@ -11,6 +13,8 @@ export interface ContextManager {
   clearFeature(): void;
   clearAll(): void;
   resolveFeatureId(explicit?: string): string;
+  getActivePhases(): Record<string, PhaseState>;
+  saveActivePhases(phases: Record<string, PhaseState>): void;
 }
 
 const CONTEXT_DIR = '.shyft';
@@ -40,6 +44,9 @@ export function createContextManager(baseDir: string): ContextManager {
     ensureDir();
     const clean: ShyftContext = {};
     if (context.featureId) clean.featureId = context.featureId;
+    if (context.activePhases && Object.keys(context.activePhases).length > 0) {
+      clean.activePhases = context.activePhases;
+    }
     writeFileSync(contextPath, JSON.stringify(clean, null, 2), { encoding: 'utf-8', mode: 0o600 });
   }
 
@@ -67,7 +74,17 @@ export function createContextManager(baseDir: string): ContextManager {
     );
   }
 
-  return { load, setFeature, clearFeature, clearAll, resolveFeatureId };
+  function getActivePhases(): Record<string, PhaseState> {
+    return load().activePhases || {};
+  }
+
+  function saveActivePhases(phases: Record<string, PhaseState>): void {
+    const current = load();
+    current.activePhases = phases;
+    save(current);
+  }
+
+  return { load, setFeature, clearFeature, clearAll, resolveFeatureId, getActivePhases, saveActivePhases };
 }
 
 let defaultManager: ContextManager | undefined;

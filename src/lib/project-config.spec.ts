@@ -16,13 +16,10 @@ describe('ProjectConfigManager', () => {
     rmSync(tempDir, { recursive: true, force: true });
   });
 
-  test('load returns default config when no file exists', () => {
+  test('load returns empty config when no file exists', () => {
     const mgr = createProjectConfigManager(tempDir);
     const config = mgr.load();
-    expect(config).toEqual({
-      activePhases: ['ideate', 'plan', 'build', 'verify'],
-      phaseCustomizations: {},
-    });
+    expect(config).toEqual({});
   });
 
   test('setProductId writes productId to config file', () => {
@@ -32,22 +29,12 @@ describe('ProjectConfigManager', () => {
     expect(config.productId).toBe('prod_123');
   });
 
-  test('setProductId preserves other config fields', () => {
-    const mgr = createProjectConfigManager(tempDir);
-    mgr.update({ activePhases: ['build', 'verify'] });
-    mgr.setProductId('prod_123');
-    const config = mgr.load();
-    expect(config.activePhases).toEqual(['build', 'verify']);
-    expect(config.productId).toBe('prod_123');
-  });
-
-  test('update merges partial config', () => {
+  test('update preserves existing fields', () => {
     const mgr = createProjectConfigManager(tempDir);
     mgr.setProductId('prod_123');
-    mgr.update({ activePhases: ['build'] });
+    mgr.update({});
     const config = mgr.load();
     expect(config.productId).toBe('prod_123');
-    expect(config.activePhases).toEqual(['build']);
   });
 
   test('resolveProductId returns explicit value over config', () => {
@@ -76,13 +63,13 @@ describe('ProjectConfigManager', () => {
     expect(existsSync(join(subDir, '.shyft'))).toBe(true);
   });
 
-  test('load returns default config on corrupt JSON', () => {
+  test('load returns empty config on corrupt JSON', () => {
     const shyftDir = join(tempDir, '.shyft');
     mkdirSync(shyftDir, { recursive: true });
     writeFileSync(join(shyftDir, 'config.json'), 'not json');
     const mgr = createProjectConfigManager(tempDir);
     const config = mgr.load();
-    expect(config.activePhases).toEqual(['ideate', 'plan', 'build', 'verify']);
+    expect(config).toEqual({});
   });
 
   test('config file has secure permissions', () => {

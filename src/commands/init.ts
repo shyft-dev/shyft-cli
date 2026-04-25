@@ -1,12 +1,12 @@
 import { Command } from 'commander';
+import { existsSync, readFileSync, writeFileSync } from 'fs';
+import { join } from 'path';
 import { getProjectConfigManager } from '../lib/project-config.js';
 import { getApiClient, ApiClientError } from '../lib/api-client.js';
 import { getConfigManager } from '../lib/config.js';
 import { output, success, info, error, isJsonMode } from '../utils/output.js';
 import { startSpinner, succeedSpinner, failSpinner } from '../utils/spinner.js';
 import { EXIT_CODES } from '../lib/constants.js';
-
-const ALL_PHASES = ['ideate', 'plan', 'build', 'verify'];
 
 export function buildCreateProductPayload(name: string, description: string): { name: string; description?: string } {
   const trimmedName = name.trim();
@@ -100,6 +100,26 @@ async function selectOrCreateProduct(): Promise<string> {
   return products[index].id;
 }
 
+const CONTEXT_IGNORE = '.shyft/context.json';
+
+export function ensureGitignore(baseDir: string): void {
+  const gitignorePath = join(baseDir, '.gitignore');
+  if (existsSync(gitignorePath)) {
+    const content = readFileSync(gitignorePath, 'utf-8');
+    if (content.includes(CONTEXT_IGNORE)) return;
+    // Replace blanket .shyft/ rule with the specific context.json rule
+    if (content.includes('.shyft/')) {
+      const updated = content.replace(/^\.shyft\/\s*\n?/m, `${CONTEXT_IGNORE}\n`);
+      writeFileSync(gitignorePath, updated, 'utf-8');
+      return;
+    }
+    const newline = content.endsWith('\n') ? '' : '\n';
+    writeFileSync(gitignorePath, content + newline + CONTEXT_IGNORE + '\n', 'utf-8');
+  } else {
+    writeFileSync(gitignorePath, CONTEXT_IGNORE + '\n', 'utf-8');
+  }
+}
+
 export const initCommand = new Command('init')
   .description('Initialize Shyft project config for this directory')
   .option('--product <id>', 'Product ID to associate with this project')
@@ -150,16 +170,8 @@ export const initCommand = new Command('init')
       productId = await selectOrCreateProduct();
     }
 
-    // When re-initializing, only change the productId — preserve other settings
-    if (projMgr.exists()) {
-      projMgr.update({ productId });
-    } else {
-      projMgr.update({
-        productId,
-        activePhases: ALL_PHASES,
-        phaseCustomizations: {},
-      });
-    }
+    projMgr.update({ productId });
+    ensureGitignore(process.cwd());
 
     success('Project initialized.');
     if (isJsonMode()) {

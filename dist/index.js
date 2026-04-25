@@ -524,6 +524,9 @@ function createContextManager(baseDir) {
     ensureDir();
     const clean = {};
     if (context.featureId) clean.featureId = context.featureId;
+    if (context.activePhases && Object.keys(context.activePhases).length > 0) {
+      clean.activePhases = context.activePhases;
+    }
     writeFileSync2(contextPath, JSON.stringify(clean, null, 2), { encoding: "utf-8", mode: 384 });
   }
   function setFeature(id) {
@@ -546,7 +549,15 @@ function createContextManager(baseDir) {
       "No feature specified. Use <id> argument or run: shyft context set --feature <id>"
     );
   }
-  return { load, setFeature, clearFeature, clearAll, resolveFeatureId };
+  function getActivePhases() {
+    return load().activePhases || {};
+  }
+  function saveActivePhases(phases) {
+    const current = load();
+    current.activePhases = phases;
+    save(current);
+  }
+  return { load, setFeature, clearFeature, clearAll, resolveFeatureId, getActivePhases, saveActivePhases };
 }
 var defaultManager2;
 function getContextManager() {
@@ -561,10 +572,6 @@ import { existsSync as existsSync3, mkdirSync as mkdirSync3, readFileSync as rea
 import { join as join4 } from "path";
 var CONFIG_DIR = ".shyft";
 var CONFIG_FILE = "config.json";
-var DEFAULT_CONFIG = {
-  activePhases: ["ideate", "plan", "build", "verify"],
-  phaseCustomizations: {}
-};
 function createProjectConfigManager(baseDir) {
   const dirPath = join4(baseDir, CONFIG_DIR);
   const filePath = join4(dirPath, CONFIG_FILE);
@@ -577,13 +584,12 @@ function createProjectConfigManager(baseDir) {
     return existsSync3(filePath);
   }
   function load() {
-    if (!existsSync3(filePath)) return { ...DEFAULT_CONFIG };
+    if (!existsSync3(filePath)) return {};
     try {
       const raw = readFileSync3(filePath, "utf-8");
-      const parsed = JSON.parse(raw);
-      return { ...DEFAULT_CONFIG, ...parsed };
+      return JSON.parse(raw);
     } catch {
-      return { ...DEFAULT_CONFIG };
+      return {};
     }
   }
   function save(config) {
@@ -959,7 +965,8 @@ import { Command as Command7 } from "commander";
 
 // src/commands/init.ts
 import { Command as Command6 } from "commander";
-var ALL_PHASES = ["ideate", "plan", "build", "verify"];
+import { existsSync as existsSync4, readFileSync as readFileSync4, writeFileSync as writeFileSync4 } from "fs";
+import { join as join5 } from "path";
 function buildCreateProductPayload(name, description) {
   const trimmedName = name.trim();
   const payload = { name: trimmedName };
@@ -1041,6 +1048,24 @@ async function selectOrCreateProduct() {
   }
   return products[index].id;
 }
+var CONTEXT_IGNORE = ".shyft/context.json";
+function ensureGitignore(baseDir) {
+  const gitignorePath = join5(baseDir, ".gitignore");
+  if (existsSync4(gitignorePath)) {
+    const content = readFileSync4(gitignorePath, "utf-8");
+    if (content.includes(CONTEXT_IGNORE)) return;
+    if (content.includes(".shyft/")) {
+      const updated = content.replace(/^\.shyft\/\s*\n?/m, `${CONTEXT_IGNORE}
+`);
+      writeFileSync4(gitignorePath, updated, "utf-8");
+      return;
+    }
+    const newline = content.endsWith("\n") ? "" : "\n";
+    writeFileSync4(gitignorePath, content + newline + CONTEXT_IGNORE + "\n", "utf-8");
+  } else {
+    writeFileSync4(gitignorePath, CONTEXT_IGNORE + "\n", "utf-8");
+  }
+}
 var initCommand = new Command6("init").description("Initialize Shyft project config for this directory").option("--product <id>", "Product ID to associate with this project").option("--name <name>", "Name for a new product (used with product creation)").option("--description <desc>", "Description for a new product").action(async (opts) => {
   const configMgr = getConfigManager();
   if (!configMgr.isAuthenticated()) {
@@ -1076,15 +1101,8 @@ var initCommand = new Command6("init").description("Initialize Shyft project con
     }
     productId = await selectOrCreateProduct();
   }
-  if (projMgr.exists()) {
-    projMgr.update({ productId });
-  } else {
-    projMgr.update({
-      productId,
-      activePhases: ALL_PHASES,
-      phaseCustomizations: {}
-    });
-  }
+  projMgr.update({ productId });
+  ensureGitignore(process.cwd());
   success("Project initialized.");
   if (isJsonMode()) {
     output(projMgr.load());
@@ -1493,38 +1511,14 @@ featuresCommand.command("upload-doc [id]").description("Upload a document to a f
 import { Command as Command9 } from "commander";
 
 // src/lib/analytics.ts
-import { existsSync as existsSync4, mkdirSync as mkdirSync4, readFileSync as readFileSync4, writeFileSync as writeFileSync4 } from "fs";
-import { join as join5 } from "path";
-var SHYFT_DIR = ".shyft";
-var PHASES_FILE = "phases.json";
-function createPhaseTracker(baseDir, sender) {
-  const dirPath = join5(baseDir, SHYFT_DIR);
-  const filePath = join5(dirPath, PHASES_FILE);
-  function ensureDir() {
-    if (!existsSync4(dirPath)) {
-      mkdirSync4(dirPath, { recursive: true, mode: 448 });
-    }
-  }
-  function loadPhases() {
-    if (!existsSync4(filePath)) return {};
-    try {
-      const raw = readFileSync4(filePath, "utf-8");
-      return JSON.parse(raw);
-    } catch {
-      return {};
-    }
-  }
-  function savePhases(phases) {
-    ensureDir();
-    writeFileSync4(filePath, JSON.stringify(phases, null, 2), { encoding: "utf-8", mode: 384 });
-  }
+function createPhaseTracker(contextManager, sender) {
   function getActivePhases() {
-    return loadPhases();
+    return contextManager.getActivePhases();
   }
   async function startPhase(phase, productId, featureId, metadata) {
-    const phases = loadPhases();
+    const phases = contextManager.getActivePhases();
     phases[phase] = { startedAt: Date.now(), productId, featureId };
-    savePhases(phases);
+    contextManager.saveActivePhases(phases);
     try {
       await sender.sendEvent({
         productId,
@@ -1538,12 +1532,12 @@ function createPhaseTracker(baseDir, sender) {
     }
   }
   async function endPhase(phase, metadata) {
-    const phases = loadPhases();
+    const phases = contextManager.getActivePhases();
     const state = phases[phase];
     if (!state) return null;
     const durationMs = Date.now() - state.startedAt;
     delete phases[phase];
-    savePhases(phases);
+    contextManager.saveActivePhases(phases);
     try {
       await sender.sendEvent({
         productId: state.productId,
@@ -1571,7 +1565,7 @@ function createApiEventSender() {
 var defaultTracker;
 function getPhaseTracker() {
   if (!defaultTracker) {
-    defaultTracker = createPhaseTracker(process.cwd(), createApiEventSender());
+    defaultTracker = createPhaseTracker(getContextManager(), createApiEventSender());
   }
   return defaultTracker;
 }

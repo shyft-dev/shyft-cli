@@ -1,6 +1,6 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
-import { join } from 'path';
 import { getApiClient } from './api-client.js';
+import type { ContextManager } from './context.js';
+import { getContextManager } from './context.js';
 
 export interface PhaseState {
   startedAt: number;
@@ -35,42 +35,15 @@ export interface PhaseTracker {
   endPhase(phase: string, metadata?: Record<string, unknown>): Promise<PhaseResult | null>;
 }
 
-const SHYFT_DIR = '.shyft';
-const PHASES_FILE = 'phases.json';
-
-export function createPhaseTracker(baseDir: string, sender: PhaseEventSender): PhaseTracker {
-  const dirPath = join(baseDir, SHYFT_DIR);
-  const filePath = join(dirPath, PHASES_FILE);
-
-  function ensureDir(): void {
-    if (!existsSync(dirPath)) {
-      mkdirSync(dirPath, { recursive: true, mode: 0o700 });
-    }
-  }
-
-  function loadPhases(): Record<string, PhaseState> {
-    if (!existsSync(filePath)) return {};
-    try {
-      const raw = readFileSync(filePath, 'utf-8');
-      return JSON.parse(raw);
-    } catch {
-      return {};
-    }
-  }
-
-  function savePhases(phases: Record<string, PhaseState>): void {
-    ensureDir();
-    writeFileSync(filePath, JSON.stringify(phases, null, 2), { encoding: 'utf-8', mode: 0o600 });
-  }
-
+export function createPhaseTracker(contextManager: ContextManager, sender: PhaseEventSender): PhaseTracker {
   function getActivePhases(): Record<string, PhaseState> {
-    return loadPhases();
+    return contextManager.getActivePhases();
   }
 
   async function startPhase(phase: string, productId: string, featureId?: string, metadata?: Record<string, unknown>): Promise<void> {
-    const phases = loadPhases();
+    const phases = contextManager.getActivePhases();
     phases[phase] = { startedAt: Date.now(), productId, featureId };
-    savePhases(phases);
+    contextManager.saveActivePhases(phases);
 
     try {
       await sender.sendEvent({
@@ -87,13 +60,13 @@ export function createPhaseTracker(baseDir: string, sender: PhaseEventSender): P
   }
 
   async function endPhase(phase: string, metadata?: Record<string, unknown>): Promise<PhaseResult | null> {
-    const phases = loadPhases();
+    const phases = contextManager.getActivePhases();
     const state = phases[phase];
     if (!state) return null;
 
     const durationMs = Date.now() - state.startedAt;
     delete phases[phase];
-    savePhases(phases);
+    contextManager.saveActivePhases(phases);
 
     try {
       await sender.sendEvent({
@@ -128,7 +101,7 @@ let defaultTracker: PhaseTracker | undefined;
 
 export function getPhaseTracker(): PhaseTracker {
   if (!defaultTracker) {
-    defaultTracker = createPhaseTracker(process.cwd(), createApiEventSender());
+    defaultTracker = createPhaseTracker(getContextManager(), createApiEventSender());
   }
   return defaultTracker;
 }

@@ -3,6 +3,7 @@ import { mkdirSync, rmSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { createPhaseTracker, type PhaseEventSender } from '../lib/analytics.js';
+import { createContextManager } from '../lib/context.js';
 
 describe('analytics command logic', () => {
   let tempDir: string;
@@ -19,7 +20,8 @@ describe('analytics command logic', () => {
   });
 
   test('start-phase then end-phase returns valid result', async () => {
-    const tracker = createPhaseTracker(tempDir, noopSender);
+    const ctx = createContextManager(tempDir);
+    const tracker = createPhaseTracker(ctx, noopSender);
     await tracker.startPhase('ideate', 'prod_123', 'feat_456');
     const result = await tracker.endPhase('ideate');
     expect(result).not.toBeNull();
@@ -30,13 +32,15 @@ describe('analytics command logic', () => {
   });
 
   test('end-phase with no active phase returns null', async () => {
-    const tracker = createPhaseTracker(tempDir, noopSender);
+    const ctx = createContextManager(tempDir);
+    const tracker = createPhaseTracker(ctx, noopSender);
     const result = await tracker.endPhase('plan');
     expect(result).toBeNull();
   });
 
   test('status shows active phases', async () => {
-    const tracker = createPhaseTracker(tempDir, noopSender);
+    const ctx = createContextManager(tempDir);
+    const tracker = createPhaseTracker(ctx, noopSender);
     await tracker.startPhase('build', 'prod_1');
     await tracker.startPhase('verify', 'prod_1', 'feat_2');
     const phases = tracker.getActivePhases();

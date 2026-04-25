@@ -103,10 +103,20 @@ shyft config reset
 
 ## Configuration
 
-Configuration is stored at `~/.shyft/config.json`. The API endpoint defaults to `https://api.shyft.dev` and can be overridden via:
+### User configuration (`~/.shyft/config.json`)
+
+Stores authentication credentials and API settings. Created by `shyft login`. The API endpoint defaults to `https://api.shyft.dev` and can be overridden via:
 
 - `shyft config set apiUrl <url>`
 - The `SHYFT_API_URL` environment variable
+
+### Project configuration (`.shyft/config.json`)
+
+Created by `shyft init`. Associates the current project directory with a Shyft product. Contains the `productId` used by commands like `shyft features` and `shyft analytics`. This file should be committed to version control so all contributors share the same product association.
+
+### Project context (`.shyft/context.json`)
+
+Transient working state for the current session. Stores the active feature ID (set via `shyft context set --feature <id>`) and phase timing data (managed by `shyft analytics start-phase` / `end-phase`). This file is automatically added to `.gitignore` by `shyft init` and should not be committed.
 
 ## JSON Mode
 

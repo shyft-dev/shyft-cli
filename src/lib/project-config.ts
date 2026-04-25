@@ -3,8 +3,6 @@ import { join } from 'path';
 
 export interface ProjectConfig {
   productId?: string;
-  activePhases: string[];
-  phaseCustomizations: Record<string, unknown>;
 }
 
 export interface ProjectConfigManager {
@@ -18,11 +16,6 @@ export interface ProjectConfigManager {
 
 const CONFIG_DIR = '.shyft';
 const CONFIG_FILE = 'config.json';
-
-const DEFAULT_CONFIG: Omit<ProjectConfig, 'productId'> = {
-  activePhases: ['ideate', 'plan', 'build', 'verify'],
-  phaseCustomizations: {},
-};
 
 export function createProjectConfigManager(baseDir: string): ProjectConfigManager {
   const dirPath = join(baseDir, CONFIG_DIR);
@@ -39,13 +32,12 @@ export function createProjectConfigManager(baseDir: string): ProjectConfigManage
   }
 
   function load(): ProjectConfig {
-    if (!existsSync(filePath)) return { ...DEFAULT_CONFIG };
+    if (!existsSync(filePath)) return {};
     try {
       const raw = readFileSync(filePath, 'utf-8');
-      const parsed = JSON.parse(raw);
-      return { ...DEFAULT_CONFIG, ...parsed };
+      return JSON.parse(raw);
     } catch {
-      return { ...DEFAULT_CONFIG };
+      return {};
     }
   }
 
