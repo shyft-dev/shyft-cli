@@ -3,96 +3,180 @@ import type { ContextManager } from './context.js';
 import { getContextManager } from './context.js';
 
 export interface PhaseState {
+  sessionId: string;
   startedAt: number;
   productId: string;
   featureId?: string;
 }
 
-export interface PhaseResult {
+export interface StartPhaseResult {
+  sessionId: string;
+  eventId: string;
+}
+
+export interface EndPhaseResult {
   phase: string;
+  sessionId: string;
   durationMs: number;
   productId: string;
   featureId?: string;
+  eventId: string;
 }
 
-export interface PhaseEventSender {
-  sendEvent(event: PhaseEvent): Promise<void>;
+export interface EndPhaseOptions {
+  status?: string;
+  reason?: string;
+  durationMs?: number;
+  costUsd?: number;
+  tokensInput?: number;
+  tokensOutput?: number;
+  tokensCacheRead?: number;
+  tokensCacheWrite?: number;
+  modelUsage?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
 }
 
-export interface PhaseEvent {
+export interface OpenPhase {
+  phase: string;
+  sessionId: string;
   productId: string;
   featureId?: string;
-  eventType: 'phase_started' | 'phase_completed';
-  phase: string;
-  source: 'cli';
-  durationMs?: number;
-  metadata?: Record<string, unknown>;
+  startedAt: string;
+  elapsedMs: number;
+}
+
+export interface StatusResult {
+  openPhases: OpenPhase[];
+}
+
+export interface StatusOptions {
+  featureId?: string;
+  productId?: string;
+  sessionId?: string;
+}
+
+export interface PhaseApiClient {
+  startPhase(params: {
+    phase: string;
+    productId: string;
+    featureId?: string;
+    metadata?: Record<string, unknown>;
+  }): Promise<{ sessionId: string; eventId: string }>;
+
+  endPhase(params: {
+    phase: string;
+    sessionId: string;
+    productId: string;
+    featureId?: string;
+    durationMs?: number;
+    status?: string;
+    reason?: string;
+    costUsd?: number;
+    tokensInput?: number;
+    tokensOutput?: number;
+    tokensCacheRead?: number;
+    tokensCacheWrite?: number;
+    modelUsage?: Record<string, unknown>;
+    metadata?: Record<string, unknown>;
+  }): Promise<{ success: boolean; eventId: string; durationMs: number }>;
+
+  getStatus(params?: StatusOptions): Promise<StatusResult>;
 }
 
 export interface PhaseTracker {
   getActivePhases(): Record<string, PhaseState>;
-  startPhase(phase: string, productId: string, featureId?: string, metadata?: Record<string, unknown>): Promise<void>;
-  endPhase(phase: string, metadata?: Record<string, unknown>): Promise<PhaseResult | null>;
+  startPhase(phase: string, productId: string, featureId?: string, metadata?: Record<string, unknown>): Promise<StartPhaseResult>;
+  endPhase(phase: string, options?: EndPhaseOptions): Promise<EndPhaseResult | null>;
+  getStatus(options?: StatusOptions): Promise<StatusResult>;
 }
 
-export function createPhaseTracker(contextManager: ContextManager, sender: PhaseEventSender): PhaseTracker {
+export function createPhaseTracker(contextManager: ContextManager, apiClient: PhaseApiClient): PhaseTracker {
   function getActivePhases(): Record<string, PhaseState> {
     return contextManager.getActivePhases();
   }
 
-  async function startPhase(phase: string, productId: string, featureId?: string, metadata?: Record<string, unknown>): Promise<void> {
+  async function startPhase(phase: string, productId: string, featureId?: string, metadata?: Record<string, unknown>): Promise<StartPhaseResult> {
+    const result = await apiClient.startPhase({
+      phase,
+      productId,
+      featureId,
+      metadata,
+    });
+
     const phases = contextManager.getActivePhases();
-    phases[phase] = { startedAt: Date.now(), productId, featureId };
+    phases[phase] = {
+      sessionId: result.sessionId,
+      startedAt: Date.now(),
+      productId,
+      featureId,
+    };
     contextManager.saveActivePhases(phases);
 
-    try {
-      await sender.sendEvent({
-        productId,
-        featureId,
-        eventType: 'phase_started',
-        phase,
-        source: 'cli',
-        metadata,
-      });
-    } catch {
-      // fire-and-forget
-    }
+    return result;
   }
 
-  async function endPhase(phase: string, metadata?: Record<string, unknown>): Promise<PhaseResult | null> {
+  async function endPhase(phase: string, options?: EndPhaseOptions): Promise<EndPhaseResult | null> {
     const phases = contextManager.getActivePhases();
     const state = phases[phase];
     if (!state) return null;
 
-    const durationMs = Date.now() - state.startedAt;
+    const durationMs = options?.durationMs ?? (Date.now() - state.startedAt);
+
+    const result = await apiClient.endPhase({
+      phase,
+      sessionId: state.sessionId,
+      productId: state.productId,
+      featureId: state.featureId,
+      durationMs,
+      status: options?.status,
+      reason: options?.reason,
+      costUsd: options?.costUsd,
+      tokensInput: options?.tokensInput,
+      tokensOutput: options?.tokensOutput,
+      tokensCacheRead: options?.tokensCacheRead,
+      tokensCacheWrite: options?.tokensCacheWrite,
+      modelUsage: options?.modelUsage,
+      metadata: options?.metadata,
+    });
+
     delete phases[phase];
     contextManager.saveActivePhases(phases);
 
-    try {
-      await sender.sendEvent({
-        productId: state.productId,
-        featureId: state.featureId,
-        eventType: 'phase_completed',
-        phase,
-        source: 'cli',
-        durationMs,
-        metadata,
-      });
-    } catch {
-      // fire-and-forget
-    }
-
-    return { phase, durationMs, productId: state.productId, featureId: state.featureId };
+    return {
+      phase,
+      sessionId: state.sessionId,
+      durationMs: result.durationMs,
+      productId: state.productId,
+      featureId: state.featureId,
+      eventId: result.eventId,
+    };
   }
 
-  return { getActivePhases, startPhase, endPhase };
+  async function getStatus(options?: StatusOptions): Promise<StatusResult> {
+    return apiClient.getStatus(options);
+  }
+
+  return { getActivePhases, startPhase, endPhase, getStatus };
 }
 
-export function createApiEventSender(): PhaseEventSender {
+export function createPhaseApiClient(): PhaseApiClient {
   return {
-    async sendEvent(event: PhaseEvent): Promise<void> {
+    async startPhase(params) {
       const client = getApiClient();
-      await client.post('/analytics/lifecycle/events', event);
+      const { data } = await client.post('/analytics/phases/start', params);
+      return data;
+    },
+
+    async endPhase(params) {
+      const client = getApiClient();
+      const { data } = await client.post('/analytics/phases/end', params);
+      return data;
+    },
+
+    async getStatus(params) {
+      const client = getApiClient();
+      const { data } = await client.get('/analytics/phases/status', { params });
+      return data;
     },
   };
 }
@@ -101,7 +185,7 @@ let defaultTracker: PhaseTracker | undefined;
 
 export function getPhaseTracker(): PhaseTracker {
   if (!defaultTracker) {
-    defaultTracker = createPhaseTracker(getContextManager(), createApiEventSender());
+    defaultTracker = createPhaseTracker(getContextManager(), createPhaseApiClient());
   }
   return defaultTracker;
 }

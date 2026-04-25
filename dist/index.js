@@ -1584,68 +1584,99 @@ featuresCommand.command("upload-doc [id]").description("Upload a document to a f
 import { Command as Command9 } from "commander";
 
 // src/lib/analytics.ts
-function createPhaseTracker(contextManager, sender) {
+function createPhaseTracker(contextManager, apiClient) {
   function getActivePhases() {
     return contextManager.getActivePhases();
   }
   async function startPhase(phase, productId, featureId, metadata) {
+    const result = await apiClient.startPhase({
+      phase,
+      productId,
+      featureId,
+      metadata
+    });
     const phases = contextManager.getActivePhases();
-    phases[phase] = { startedAt: Date.now(), productId, featureId };
+    phases[phase] = {
+      sessionId: result.sessionId,
+      startedAt: Date.now(),
+      productId,
+      featureId
+    };
     contextManager.saveActivePhases(phases);
-    try {
-      await sender.sendEvent({
-        productId,
-        featureId,
-        eventType: "phase_started",
-        phase,
-        source: "cli",
-        metadata
-      });
-    } catch {
-    }
+    return result;
   }
-  async function endPhase(phase, metadata) {
+  async function endPhase(phase, options) {
     const phases = contextManager.getActivePhases();
     const state = phases[phase];
     if (!state) return null;
-    const durationMs = Date.now() - state.startedAt;
+    const durationMs = options?.durationMs ?? Date.now() - state.startedAt;
+    const result = await apiClient.endPhase({
+      phase,
+      sessionId: state.sessionId,
+      productId: state.productId,
+      featureId: state.featureId,
+      durationMs,
+      status: options?.status,
+      reason: options?.reason,
+      costUsd: options?.costUsd,
+      tokensInput: options?.tokensInput,
+      tokensOutput: options?.tokensOutput,
+      tokensCacheRead: options?.tokensCacheRead,
+      tokensCacheWrite: options?.tokensCacheWrite,
+      modelUsage: options?.modelUsage,
+      metadata: options?.metadata
+    });
     delete phases[phase];
     contextManager.saveActivePhases(phases);
-    try {
-      await sender.sendEvent({
-        productId: state.productId,
-        featureId: state.featureId,
-        eventType: "phase_completed",
-        phase,
-        source: "cli",
-        durationMs,
-        metadata
-      });
-    } catch {
-    }
-    return { phase, durationMs, productId: state.productId, featureId: state.featureId };
+    return {
+      phase,
+      sessionId: state.sessionId,
+      durationMs: result.durationMs,
+      productId: state.productId,
+      featureId: state.featureId,
+      eventId: result.eventId
+    };
   }
-  return { getActivePhases, startPhase, endPhase };
+  async function getStatus(options) {
+    return apiClient.getStatus(options);
+  }
+  return { getActivePhases, startPhase, endPhase, getStatus };
 }
-function createApiEventSender() {
+function createPhaseApiClient() {
   return {
-    async sendEvent(event) {
+    async startPhase(params) {
       const client = getApiClient();
-      await client.post("/analytics/lifecycle/events", event);
+      const { data } = await client.post("/analytics/phases/start", params);
+      return data;
+    },
+    async endPhase(params) {
+      const client = getApiClient();
+      const { data } = await client.post("/analytics/phases/end", params);
+      return data;
+    },
+    async getStatus(params) {
+      const client = getApiClient();
+      const { data } = await client.get("/analytics/phases/status", { params });
+      return data;
     }
   };
 }
 var defaultTracker;
 function getPhaseTracker() {
   if (!defaultTracker) {
-    defaultTracker = createPhaseTracker(getContextManager(), createApiEventSender());
+    defaultTracker = createPhaseTracker(getContextManager(), createPhaseApiClient());
   }
   return defaultTracker;
 }
 
 // src/commands/analytics.ts
 var analyticsCommand = new Command9("analytics").description("Track SDLC phase analytics");
-analyticsCommand.command("start-phase <phase>").description("Start tracking a phase (ideate, plan, build, verify)").option("--product <id>", "Product ID (defaults to project config)").option("--feature <id>", "Feature ID (defaults to context)").action(async (phase, opts) => {
+analyticsCommand.command("start-phase <phase>").description("Start tracking a phase (ideate, build, verify)").option("--product <id>", "Product ID (defaults to project config)").option("--feature <id>", "Feature ID (defaults to context)").action(async (phase, opts) => {
+  const validPhases = ["ideate", "build", "verify"];
+  if (!validPhases.includes(phase)) {
+    error(`Invalid phase "${phase}". Valid phases: ${validPhases.join(", ")}`);
+    process.exit(EXIT_CODES.VALIDATION_ERROR);
+  }
   try {
     const projMgr = getProjectConfigManager();
     const ctxMgr = getContextManager();
@@ -1661,29 +1692,46 @@ analyticsCommand.command("start-phase <phase>").description("Start tracking a ph
       error(`Phase "${phase}" is already active. End it first with: shyft analytics end-phase ${phase}`);
       process.exit(EXIT_CODES.VALIDATION_ERROR);
     }
-    await tracker.startPhase(phase, productId, featureId);
+    const spinner = startSpinner(`Starting ${phase} phase...`);
+    const result = await tracker.startPhase(phase, productId, featureId);
+    succeedSpinner(`Phase "${phase}" started.`);
     if (isJsonMode()) {
-      output({ phase, status: "started", productId, featureId: featureId || null });
+      output({ phase, status: "started", sessionId: result.sessionId, eventId: result.eventId, productId, featureId: featureId || null });
     } else {
       success(`Phase "${phase}" started`);
+      info(`  Session: ${result.sessionId}`);
     }
   } catch (err) {
+    failSpinner(`Failed to start phase.`);
     error(err.message || "Failed to start phase");
-    process.exit(EXIT_CODES.GENERAL_ERROR);
+    process.exit(EXIT_CODES.API_ERROR);
   }
 });
-analyticsCommand.command("end-phase <phase>").description("End tracking a phase and report duration").action(async (phase) => {
+analyticsCommand.command("end-phase <phase>").description("End tracking a phase and report duration").option("--status <status>", "Phase status (e.g. completed, failed)").option("--reason <reason>", "Reason for ending the phase").action(async (phase, opts) => {
   try {
     const tracker = getPhaseTracker();
-    const result = await tracker.endPhase(phase);
-    if (!result) {
+    const active = tracker.getActivePhases();
+    if (!active[phase]) {
       error(`No active phase "${phase}" found. Start one with: shyft analytics start-phase ${phase}`);
       process.exit(EXIT_CODES.VALIDATION_ERROR);
     }
+    const spinner = startSpinner(`Ending ${phase} phase...`);
+    const result = await tracker.endPhase(phase, {
+      status: opts.status,
+      reason: opts.reason
+    });
+    if (!result) {
+      failSpinner("Failed to end phase.");
+      error(`No active phase "${phase}" found.`);
+      process.exit(EXIT_CODES.VALIDATION_ERROR);
+    }
+    succeedSpinner(`Phase "${phase}" ended.`);
     if (isJsonMode()) {
       output({
         phase: result.phase,
         status: "completed",
+        sessionId: result.sessionId,
+        eventId: result.eventId,
         durationMs: result.durationMs,
         productId: result.productId,
         featureId: result.featureId || null
@@ -1693,32 +1741,39 @@ analyticsCommand.command("end-phase <phase>").description("End tracking a phase 
       success(`Phase "${result.phase}" completed (${seconds}s)`);
     }
   } catch (err) {
+    failSpinner("Failed to end phase.");
     error(err.message || "Failed to end phase");
-    process.exit(EXIT_CODES.GENERAL_ERROR);
+    process.exit(EXIT_CODES.API_ERROR);
   }
 });
-analyticsCommand.command("status").description("Show active phases").action(() => {
+analyticsCommand.command("status").description("Show active phases").option("--product <id>", "Filter by product ID").option("--feature <id>", "Filter by feature ID").option("--session-id <id>", "Filter by session ID").action(async (opts) => {
+  const spinner = startSpinner("Fetching phase status...");
   try {
     const tracker = getPhaseTracker();
-    const phases = tracker.getActivePhases();
-    const entries = Object.entries(phases);
+    const result = await tracker.getStatus({
+      productId: opts.product,
+      featureId: opts.feature,
+      sessionId: opts.sessionId
+    });
+    succeedSpinner("Status loaded.");
     if (isJsonMode()) {
-      output({ activePhases: phases });
+      output(result);
       return;
     }
-    if (entries.length === 0) {
+    if (result.openPhases.length === 0) {
       info("No active phases.");
       return;
     }
     info("Active phases:");
-    for (const [phase, state] of entries) {
-      const elapsed = ((Date.now() - state.startedAt) / 1e3).toFixed(1);
-      const feature = state.featureId ? ` (feature: ${state.featureId})` : "";
-      info(`  ${phase}: ${elapsed}s elapsed${feature}`);
+    for (const phase of result.openPhases) {
+      const elapsed = (phase.elapsedMs / 1e3).toFixed(1);
+      const feature = phase.featureId ? ` (feature: ${phase.featureId})` : "";
+      info(`  ${phase.phase}: ${elapsed}s elapsed${feature} [session: ${phase.sessionId}]`);
     }
   } catch (err) {
+    failSpinner("Failed to get status.");
     error(err.message || "Failed to get phase status");
-    process.exit(EXIT_CODES.GENERAL_ERROR);
+    process.exit(EXIT_CODES.API_ERROR);
   }
 });
 
