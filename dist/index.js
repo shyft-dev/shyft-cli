@@ -1522,14 +1522,18 @@ featuresCommand.command("plan-approve [id]").description("Approve the current dr
   const spinner = startSpinner("Approving plan...");
   try {
     const client = getApiClient();
-    const { data } = await client.patch(`/features/${featureId}/plan/approve`);
+    const { data } = await client.patch(`/features/${featureId}/plan/approve`, {});
     succeedSpinner("Plan approved.");
     if (isJsonMode()) {
       output(data);
     } else {
       success(`Plan approved for feature ${featureId}`);
-      info(`  Title: ${data.title}`);
-      info(`  Stage: ${data.stage}`);
+      if (data?.plan?.version !== void 0) {
+        info(`  Plan version: ${data.plan.version}`);
+      }
+      if (data?.plan?.status) {
+        info(`  Status: ${data.plan.status}`);
+      }
     }
   } catch (err) {
     failSpinner("Failed to approve plan.");
