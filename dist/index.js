@@ -136,11 +136,25 @@ function createApiClient(requireAuth = true) {
       if (err.response) {
         const { status, data } = err.response;
         const apiError = data?.error;
+        let message = apiError?.message || data?.message;
+        if (!message) {
+          if (typeof data === "string" && data.trim()) {
+            message = `${err.message}: ${data.slice(0, 500)}`;
+          } else if (data && typeof data === "object") {
+            try {
+              message = `${err.message}: ${JSON.stringify(data).slice(0, 500)}`;
+            } catch {
+              message = err.message;
+            }
+          } else {
+            message = err.message;
+          }
+        }
         throw new ApiClientError(
-          apiError?.message || err.message,
+          message,
           apiError?.code || "api_error",
           status,
-          apiError?.details
+          apiError?.details ?? data
         );
       }
       if (err.code === "ECONNREFUSED") {
@@ -1608,13 +1622,16 @@ function createPhaseTracker(contextManager, apiClient) {
   async function endPhase(phase, options) {
     const phases = contextManager.getActivePhases();
     const state = phases[phase];
-    if (!state) return null;
-    const durationMs = options?.durationMs ?? Date.now() - state.startedAt;
+    const sessionId = options?.sessionId ?? state?.sessionId;
+    const productId = options?.productId ?? state?.productId;
+    const featureId = options?.featureId ?? state?.featureId;
+    if (!sessionId || !productId) return null;
+    const durationMs = options?.durationMs ?? (state ? Date.now() - state.startedAt : void 0);
     const result = await apiClient.endPhase({
       phase,
-      sessionId: state.sessionId,
-      productId: state.productId,
-      featureId: state.featureId,
+      sessionId,
+      productId,
+      featureId,
       durationMs,
       status: options?.status,
       reason: options?.reason,
@@ -1626,14 +1643,16 @@ function createPhaseTracker(contextManager, apiClient) {
       modelUsage: options?.modelUsage,
       metadata: options?.metadata
     });
-    delete phases[phase];
-    contextManager.saveActivePhases(phases);
+    if (state) {
+      delete phases[phase];
+      contextManager.saveActivePhases(phases);
+    }
     return {
       phase,
-      sessionId: state.sessionId,
+      sessionId,
       durationMs: result.durationMs,
-      productId: state.productId,
-      featureId: state.featureId,
+      productId,
+      featureId,
       eventId: result.eventId
     };
   }
@@ -1677,15 +1696,17 @@ analyticsCommand.command("start-phase <phase>").description("Start tracking a ph
     error(`Invalid phase "${phase}". Valid phases: ${validPhases.join(", ")}`);
     process.exit(EXIT_CODES.VALIDATION_ERROR);
   }
+  const projMgr = getProjectConfigManager();
+  const ctxMgr = getContextManager();
+  let productId;
   try {
-    const projMgr = getProjectConfigManager();
-    const ctxMgr = getContextManager();
-    const productId = opts.product || projMgr.load().productId;
-    if (!productId) {
-      error("No product ID available. Use --product <id> or run: shyft init");
-      process.exit(EXIT_CODES.VALIDATION_ERROR);
-    }
-    const featureId = opts.feature || ctxMgr.load().featureId;
+    productId = projMgr.resolveProductId(opts.product);
+  } catch (err) {
+    error(err.message);
+    process.exit(EXIT_CODES.VALIDATION_ERROR);
+  }
+  const featureId = opts.feature || ctxMgr.load().featureId;
+  try {
     const tracker = getPhaseTracker();
     const active = tracker.getActivePhases();
     if (active[phase]) {
@@ -1707,16 +1728,28 @@ analyticsCommand.command("start-phase <phase>").description("Start tracking a ph
     process.exit(EXIT_CODES.API_ERROR);
   }
 });
-analyticsCommand.command("end-phase <phase>").description("End tracking a phase and report duration").option("--status <status>", "Phase status (e.g. completed, failed)").option("--reason <reason>", "Reason for ending the phase").action(async (phase, opts) => {
+analyticsCommand.command("end-phase <phase>").description("End tracking a phase and report duration").option("--product <id>", "Product ID (defaults to project config)").option("--feature <id>", "Feature ID (defaults to context)").option("--session-id <id>", "Session ID returned by start-phase (overrides local state)").option("--status <status>", "Phase status (e.g. completed, failed)").option("--reason <reason>", "Reason for ending the phase").action(async (phase, opts) => {
   try {
     const tracker = getPhaseTracker();
+    const projMgr = getProjectConfigManager();
+    const ctxMgr = getContextManager();
     const active = tracker.getActivePhases();
-    if (!active[phase]) {
-      error(`No active phase "${phase}" found. Start one with: shyft analytics start-phase ${phase}`);
+    const localState = active[phase];
+    if (!localState && !opts.sessionId) {
+      error(`No active phase "${phase}" found. Start one with: shyft analytics start-phase ${phase}, or pass --session-id explicitly.`);
+      process.exit(EXIT_CODES.VALIDATION_ERROR);
+    }
+    const productId = opts.product || localState?.productId || projMgr.load().productId;
+    const featureId = opts.feature || localState?.featureId || ctxMgr.load().featureId;
+    if (opts.sessionId && !productId) {
+      error("When using --session-id, a product ID is required (via --product or project config).");
       process.exit(EXIT_CODES.VALIDATION_ERROR);
     }
     const spinner = startSpinner(`Ending ${phase} phase...`);
     const result = await tracker.endPhase(phase, {
+      sessionId: opts.sessionId,
+      productId,
+      featureId,
       status: opts.status,
       reason: opts.reason
     });

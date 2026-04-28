@@ -21,18 +21,20 @@ analyticsCommand
       process.exit(EXIT_CODES.VALIDATION_ERROR);
     }
 
+    const projMgr = getProjectConfigManager();
+    const ctxMgr = getContextManager();
+
+    let productId: string;
     try {
-      const projMgr = getProjectConfigManager();
-      const ctxMgr = getContextManager();
+      productId = projMgr.resolveProductId(opts.product);
+    } catch (err) {
+      error((err as Error).message);
+      process.exit(EXIT_CODES.VALIDATION_ERROR);
+    }
 
-      const productId = opts.product || projMgr.load().productId;
-      if (!productId) {
-        error('No product ID available. Use --product <id> or run: shyft init');
-        process.exit(EXIT_CODES.VALIDATION_ERROR);
-      }
+    const featureId = opts.feature || ctxMgr.load().featureId;
 
-      const featureId = opts.feature || ctxMgr.load().featureId;
-
+    try {
       const tracker = getPhaseTracker();
       const active = tracker.getActivePhases();
       if (active[phase]) {
@@ -60,20 +62,38 @@ analyticsCommand
 analyticsCommand
   .command('end-phase <phase>')
   .description('End tracking a phase and report duration')
+  .option('--product <id>', 'Product ID (defaults to project config)')
+  .option('--feature <id>', 'Feature ID (defaults to context)')
+  .option('--session-id <id>', 'Session ID returned by start-phase (overrides local state)')
   .option('--status <status>', 'Phase status (e.g. completed, failed)')
   .option('--reason <reason>', 'Reason for ending the phase')
-  .action(async (phase: string, opts: { status?: string; reason?: string }) => {
+  .action(async (phase: string, opts: { product?: string; feature?: string; sessionId?: string; status?: string; reason?: string }) => {
     try {
       const tracker = getPhaseTracker();
+      const projMgr = getProjectConfigManager();
+      const ctxMgr = getContextManager();
 
       const active = tracker.getActivePhases();
-      if (!active[phase]) {
-        error(`No active phase "${phase}" found. Start one with: shyft analytics start-phase ${phase}`);
+      const localState = active[phase];
+
+      if (!localState && !opts.sessionId) {
+        error(`No active phase "${phase}" found. Start one with: shyft analytics start-phase ${phase}, or pass --session-id explicitly.`);
+        process.exit(EXIT_CODES.VALIDATION_ERROR);
+      }
+
+      const productId = opts.product || localState?.productId || projMgr.load().productId;
+      const featureId = opts.feature || localState?.featureId || ctxMgr.load().featureId;
+
+      if (opts.sessionId && !productId) {
+        error('When using --session-id, a product ID is required (via --product or project config).');
         process.exit(EXIT_CODES.VALIDATION_ERROR);
       }
 
       const spinner = startSpinner(`Ending ${phase} phase...`);
       const result = await tracker.endPhase(phase, {
+        sessionId: opts.sessionId,
+        productId,
+        featureId,
         status: opts.status,
         reason: opts.reason,
       });

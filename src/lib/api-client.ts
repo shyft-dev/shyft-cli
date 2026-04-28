@@ -54,11 +54,25 @@ export function createApiClient(requireAuth = true): AxiosInstance {
       if (err.response) {
         const { status, data } = err.response;
         const apiError = data?.error;
+        let message = apiError?.message || data?.message;
+        if (!message) {
+          if (typeof data === 'string' && data.trim()) {
+            message = `${err.message}: ${data.slice(0, 500)}`;
+          } else if (data && typeof data === 'object') {
+            try {
+              message = `${err.message}: ${JSON.stringify(data).slice(0, 500)}`;
+            } catch {
+              message = err.message;
+            }
+          } else {
+            message = err.message;
+          }
+        }
         throw new ApiClientError(
-          apiError?.message || err.message,
+          message,
           apiError?.code || 'api_error',
           status,
-          apiError?.details,
+          apiError?.details ?? data,
         );
       }
       if (err.code === 'ECONNREFUSED') {

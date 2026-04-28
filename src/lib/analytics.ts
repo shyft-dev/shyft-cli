@@ -24,6 +24,9 @@ export interface EndPhaseResult {
 }
 
 export interface EndPhaseOptions {
+  sessionId?: string;
+  productId?: string;
+  featureId?: string;
   status?: string;
   reason?: string;
   durationMs?: number;
@@ -118,15 +121,20 @@ export function createPhaseTracker(contextManager: ContextManager, apiClient: Ph
   async function endPhase(phase: string, options?: EndPhaseOptions): Promise<EndPhaseResult | null> {
     const phases = contextManager.getActivePhases();
     const state = phases[phase];
-    if (!state) return null;
 
-    const durationMs = options?.durationMs ?? (Date.now() - state.startedAt);
+    const sessionId = options?.sessionId ?? state?.sessionId;
+    const productId = options?.productId ?? state?.productId;
+    const featureId = options?.featureId ?? state?.featureId;
+
+    if (!sessionId || !productId) return null;
+
+    const durationMs = options?.durationMs ?? (state ? Date.now() - state.startedAt : undefined);
 
     const result = await apiClient.endPhase({
       phase,
-      sessionId: state.sessionId,
-      productId: state.productId,
-      featureId: state.featureId,
+      sessionId,
+      productId,
+      featureId,
       durationMs,
       status: options?.status,
       reason: options?.reason,
@@ -139,15 +147,17 @@ export function createPhaseTracker(contextManager: ContextManager, apiClient: Ph
       metadata: options?.metadata,
     });
 
-    delete phases[phase];
-    contextManager.saveActivePhases(phases);
+    if (state) {
+      delete phases[phase];
+      contextManager.saveActivePhases(phases);
+    }
 
     return {
       phase,
-      sessionId: state.sessionId,
+      sessionId,
       durationMs: result.durationMs,
-      productId: state.productId,
-      featureId: state.featureId,
+      productId,
+      featureId,
       eventId: result.eventId,
     };
   }

@@ -214,6 +214,48 @@ describe('PhaseTracker API calls', () => {
     expect(tracker.getActivePhases().ideate).toBeUndefined();
   });
 
+  test('endPhase with explicit sessionId works without local state', async () => {
+    const events: any[] = [];
+    const apiClient = createMockApiClient(events);
+    const ctx = createContextManager(tempDir);
+    const tracker = createPhaseTracker(ctx, apiClient);
+    // No startPhase call — no local state
+    const result = await tracker.endPhase('build', {
+      sessionId: 'explicit_session',
+      productId: 'prod_explicit',
+      featureId: 'feat_explicit',
+    });
+    expect(result).not.toBeNull();
+    expect(result!.sessionId).toBe('explicit_session');
+    expect(events[0].type).toBe('end');
+    expect(events[0].params.sessionId).toBe('explicit_session');
+    expect(events[0].params.productId).toBe('prod_explicit');
+    expect(events[0].params.featureId).toBe('feat_explicit');
+  });
+
+  test('endPhase explicit options override local state', async () => {
+    const events: any[] = [];
+    const apiClient = createMockApiClient(events);
+    const ctx = createContextManager(tempDir);
+    const tracker = createPhaseTracker(ctx, apiClient);
+    await tracker.startPhase('verify', 'prod_local');
+    await tracker.endPhase('verify', {
+      sessionId: 'override_session',
+      productId: 'prod_override',
+    });
+    expect(events[1].params.sessionId).toBe('override_session');
+    expect(events[1].params.productId).toBe('prod_override');
+    // Local state should be cleaned up
+    expect(tracker.getActivePhases().verify).toBeUndefined();
+  });
+
+  test('endPhase returns null when no local state and no explicit options', async () => {
+    const ctx = createContextManager(tempDir);
+    const tracker = createPhaseTracker(ctx, createMockApiClient());
+    const result = await tracker.endPhase('build');
+    expect(result).toBeNull();
+  });
+
   test('endPhase throws when API fails but preserves local state', async () => {
     let shouldFail = false;
     const apiClient: PhaseApiClient = {
