@@ -254,7 +254,7 @@ async function runBrowserAuthFlow() {
   try {
     startSpinner("Creating auth session...");
     const { data: session } = await client.post("/cli-auth/sessions", {
-      cliVersion: "0.4.6",
+      cliVersion: "0.4.7",
       os: `${platform()} ${release()}`,
       hostname: hostname()
     });
@@ -1814,7 +1814,7 @@ analyticsCommand.command("status").description("Show active phases").option("--p
 loadDotenv({ path: ".env.local" });
 loadDotenv();
 var program = new Command10();
-program.name("shyft").description("CLI for the Shyft platform").version("0.4.6").option("--json", "Output in JSON format").hook("preAction", (thisCommand) => {
+program.name("shyft").description("CLI for the Shyft platform").version("0.4.7").option("--json", "Output in JSON format").hook("preAction", (thisCommand) => {
   const opts = thisCommand.opts();
   if (opts.json) {
     setJsonMode(true);
