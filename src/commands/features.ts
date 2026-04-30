@@ -407,11 +407,22 @@ featuresCommand
     }
   });
 
+function parseGitHubPRUrl(url: string): { number: number; repoFullName: string } | null {
+  const match = url.match(/^https?:\/\/(?:www\.)?github\.com\/([^/\s]+\/[^/\s]+)\/pull\/(\d+)(?:[/?#].*)?$/i);
+  if (!match) return null;
+  const [, repoFullName, numStr] = match;
+  const number = parseInt(numStr, 10);
+  if (!Number.isFinite(number) || number <= 0) return null;
+  return { number, repoFullName };
+}
+
 featuresCommand
   .command('link-pr [id]')
   .description('Link a pull request to a feature')
-  .requiredOption('--url <url>', 'Full URL of the PR')
-  .action(async (id: string | undefined, opts: { url: string }) => {
+  .requiredOption('--url <url>', 'Full URL of the PR (e.g. https://github.com/owner/repo/pull/42)')
+  .option('--number <n>', 'PR number (parsed from --url if omitted)')
+  .option('--repo <owner/repo>', 'Repository full name (parsed from --url if omitted)')
+  .action(async (id: string | undefined, opts: { url: string; number?: string; repo?: string }) => {
     const ctx = getContextManager();
     let featureId: string;
     try {
@@ -421,16 +432,43 @@ featuresCommand
       process.exit(EXIT_CODES.VALIDATION_ERROR);
     }
 
+    let number: number | undefined;
+    let repoFullName: string | undefined = opts.repo;
+
+    if (opts.number) {
+      const parsed = parseInt(opts.number, 10);
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        error(`Invalid --number value: ${opts.number}`);
+        process.exit(EXIT_CODES.VALIDATION_ERROR);
+      }
+      number = parsed;
+    }
+
+    if (number === undefined || !repoFullName) {
+      const parsed = parseGitHubPRUrl(opts.url);
+      if (!parsed) {
+        error('Could not parse PR number and repo from --url. Provide --number and --repo explicitly, or use a GitHub PR URL like https://github.com/owner/repo/pull/42');
+        process.exit(EXIT_CODES.VALIDATION_ERROR);
+      }
+      if (number === undefined) number = parsed.number;
+      if (!repoFullName) repoFullName = parsed.repoFullName;
+    }
+
     const spinner = startSpinner('Linking PR...');
     try {
       const client = getApiClient();
-      const { data } = await client.post(`/features/${featureId}/link-pr`, { url: opts.url });
+      const { data } = await client.post(`/features/${featureId}/link-pr`, {
+        url: opts.url,
+        number,
+        repoFullName,
+      });
       succeedSpinner('PR linked.');
 
       if (isJsonMode()) {
         output(data);
       } else {
         success(`PR linked to feature ${featureId}`);
+        info(`  PR: ${repoFullName}#${number}`);
       }
     } catch (err) {
       failSpinner('Failed to link PR.');
