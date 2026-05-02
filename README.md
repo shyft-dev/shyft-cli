@@ -7,23 +7,23 @@ Command-line interface for the Shyft platform.
 Install the latest release directly from GitHub (pin to a released tag):
 
 ```bash
-npm install -g github:shyft-dev/shyft-cli#v0.4.1 --install-links
-
-npm uninstall -g @shyft-dev/cli
-
+npm install -g github:shyft-dev/shyft-cli#v0.4.9 --install-links
 ```
 
-This requires access to the `shyft-dev/shyft-cli` repository. Node 18+ and
-npm are the only requirements.
+To uninstall:
+
+```bash
+npm uninstall -g @shyft-dev/cli
+```
+
+Node 18+ and npm are the only requirements.
 
 > The `--install-links` flag is required. Without it, npm 10 creates a
 > broken symlink to a temporary cache directory when installing scoped
 > packages globally from git URLs ([npm/cli#4421](https://github.com/npm/cli/issues/4421)).
 > This flag forces npm to copy package files instead.
 
-### For beta testers
-
-Always pin to a released tag (e.g. `#v0.2.0`) rather than installing from
+Always pin to a released tag (e.g. `#v0.4.9`) rather than installing from
 `main`. To upgrade, rerun the install command with the new tag.
 
 ### Local development install
