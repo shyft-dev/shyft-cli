@@ -1,7 +1,16 @@
+.DS_Store
+*.log
+npm-debug.log*
+coverage/
+.idea/
+.vscode/
+.claude/
 node_modules/
 .turbo/
 .env
 .env.local
-.shyft/context.json
+.env.*
+.shyft/
 openapi.json
 docs/
+PUBLIC_NPM_MIGRATION.md

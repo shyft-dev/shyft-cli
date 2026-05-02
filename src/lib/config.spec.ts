@@ -23,10 +23,10 @@ describe('config manager', () => {
 
   test('saveConfig creates file and loadConfig reads it back', () => {
     const mgr = createConfigManager(testDir);
-    mgr.saveConfig({ apiKey: 'test-key', email: 'test@shyft.io' });
+    mgr.saveConfig({ apiKey: 'test-key', email: 'test@example.com' });
     const config = mgr.loadConfig();
     expect(config.apiKey).toBe('test-key');
-    expect(config.email).toBe('test@shyft.io');
+    expect(config.email).toBe('test@example.com');
   });
 
   test('updateConfig merges partial updates', () => {
