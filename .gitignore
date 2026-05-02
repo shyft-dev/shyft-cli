@@ -14,3 +14,4 @@ node_modules/
 openapi.json
 docs/
 PUBLIC_NPM_MIGRATION.md
+CLAUDE.md
