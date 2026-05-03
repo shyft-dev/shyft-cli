@@ -23,6 +23,7 @@
   "scripts": {
     "dev": "tsup --watch",
     "build": "tsup && chmod +x bin/shyft.js",
+    "prepare": "tsup && chmod +x bin/shyft.js",
     "lint": "eslint src/**/*.ts --fix",
     "test": "bun test",
     "typecheck": "tsc --noEmit",

@@ -2,7 +2,7 @@
 
 ## Reporting a Vulnerability
 
-If you believe you've found a security issue in `@shyft-dev/cli`, please **do not open a public GitHub issue**. Instead, email **security@shyft.dev** with:
+If you believe you've found a security issue in `@shyft-dev/cli`, please **do not open a public GitHub issue**. Instead, email **support@shyft.dev** with:
 
 - A description of the issue and its impact
 - Steps to reproduce (or a proof of concept)

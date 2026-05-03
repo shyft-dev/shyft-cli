@@ -7,8 +7,8 @@
 #   bun run release minor   # 0.1.0 -> 0.2.0
 #   bun run release major   # 0.1.0 -> 1.0.0
 #
-# Produces a git tag and a GitHub Release. Requires gh CLI to be
-# authenticated.
+# Bumps version, tags, pushes, creates a GitHub Release, and publishes
+# to npm. Requires `gh` and `npm` CLIs to be authenticated.
 
 set -euo pipefail
 
@@ -56,24 +56,18 @@ bun run typecheck
 echo "==> Running tests..."
 bun test
 
-# 5. Bump version in package.json (no commit/tag yet — must happen before build
-#    so tsup injects the new version into dist/ via __CLI_VERSION__)
+# 5. Sanity build
+echo "==> Sanity build..."
+bun run build
+
+# 6. Bump version, commit, and tag (npm version handles all three)
 echo "==> Bumping version ($BUMP)..."
-npm version "$BUMP" --no-git-tag-version
+npm version "$BUMP" --message "chore: release v%s"
 
 NEW_VERSION="$(node -p "require('./package.json').version")"
 TAG="v$NEW_VERSION"
 
-# 6. Build dist/ (committed to repo so git-installs work without a prepare step)
-echo "==> Building $TAG..."
-bun run build
-
-# 7. Commit version bump + built dist/, then tag
-echo "==> Committing release $TAG..."
-git add package.json dist/
-git commit -m "chore: release $TAG"
-git tag -a "$TAG" -m "release $TAG"
-
+# 7. Push commit and tag
 echo "==> Pushing commit and tag $TAG..."
 git push origin main
 git push origin "$TAG"
@@ -82,10 +76,10 @@ git push origin "$TAG"
 echo "==> Creating GitHub Release..."
 gh release create "$TAG" --generate-notes --title "$TAG"
 
-# 9. Publish to npm (enable at public launch)
-# echo "==> Publishing to npm..."
-# npm publish
+# 9. Publish to npm (npm runs `prepare` → builds dist/ → packs → uploads)
+echo "==> Publishing to npm..."
+npm publish
 
 echo ""
 echo "Released $TAG"
-echo "Install with: npm install -g github:shyft-dev/shyft-cli#$TAG"
+echo "Install with: npm install -g @shyft-dev/cli@$NEW_VERSION"

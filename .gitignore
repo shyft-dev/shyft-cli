@@ -6,6 +6,7 @@ coverage/
 .vscode/
 .claude/
 node_modules/
+dist/
 .turbo/
 .env
 .env.local
