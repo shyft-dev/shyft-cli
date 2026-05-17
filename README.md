@@ -1,7 +1,7 @@
 # @shyft-dev/cli
 
 > [!IMPORTANT]
-> Shyft is in private beta. If you are interested in how your team can accelerate and measure AI-First development, please [join us](https://www.shyft.dev).
+> Shyft is in Early Access. If you are interested in how your team can accelerate and measure AI-First development, please [join us](https://www.shyft.dev).
 
 Command-line interface for the Shyft platform.
 
