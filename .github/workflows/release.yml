@@ -4,13 +4,14 @@ on:
   workflow_dispatch:
     inputs:
       bump:
-        description: Version bump
+        description: Version bump (use "current" to publish the version already in package.json)
         required: true
         type: choice
         options:
           - patch
           - minor
           - major
+          - current
 
 permissions:
   contents: write
@@ -60,13 +61,24 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Bump version, commit, and tag
+      - name: Resolve version and tag
         id: version
         run: |
-          npm version "${{ inputs.bump }}" --message "chore: release v%s"
-          NEW_VERSION=$(node -p "require('./package.json').version")
+          if [[ "${{ inputs.bump }}" == "current" ]]; then
+            NEW_VERSION=$(node -p "require('./package.json').version")
+            TAG="v$NEW_VERSION"
+            if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+              echo "Error: tag $TAG already exists. Bump package.json or delete the tag before retrying." >&2
+              exit 1
+            fi
+            git tag -a "$TAG" -m "chore: release $TAG"
+          else
+            npm version "${{ inputs.bump }}" --message "chore: release v%s"
+            NEW_VERSION=$(node -p "require('./package.json').version")
+            TAG="v$NEW_VERSION"
+          fi
           echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag=v$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
       - name: Push commit and tag
         run: |
