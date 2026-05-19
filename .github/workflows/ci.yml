@@ -21,13 +21,6 @@ jobs:
       - name: Typecheck
         run: bun run typecheck
 
-      - name: Debug — verify source bytes
-        run: |
-          echo "--- src/lib/context.ts (first 5 lines) ---"
-          head -5 src/lib/context.ts
-          echo "--- src/lib/project-config.ts (first 5 lines) ---"
-          head -5 src/lib/project-config.ts
-
       - name: Test
         run: bun test
 

@@ -50,13 +50,6 @@ jobs:
       - name: Typecheck
         run: bun run typecheck
 
-      - name: Debug — verify source bytes
-        run: |
-          echo "--- src/lib/context.ts (first 5 lines) ---"
-          head -5 src/lib/context.ts
-          echo "--- src/lib/project-config.ts (first 5 lines) ---"
-          head -5 src/lib/project-config.ts
-
       - name: Test
         run: bun test
 
@@ -75,10 +68,10 @@ jobs:
             NEW_VERSION=$(node -p "require('./package.json').version")
             TAG="v$NEW_VERSION"
             if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
-              echo "Error: tag $TAG already exists. Bump package.json or delete the tag before retrying." >&2
-              exit 1
+              echo "Tag $TAG already exists locally; reusing it."
+            else
+              git tag -a "$TAG" -m "chore: release $TAG"
             fi
-            git tag -a "$TAG" -m "chore: release $TAG"
           else
             npm version "${{ inputs.bump }}" --message "chore: release v%s"
             NEW_VERSION=$(node -p "require('./package.json').version")
@@ -90,15 +83,32 @@ jobs:
       - name: Push commit and tag
         run: |
           git push origin HEAD:main
-          git push origin "${{ steps.version.outputs.tag }}"
+          if git ls-remote --exit-code --tags origin "refs/tags/${{ steps.version.outputs.tag }}" >/dev/null 2>&1; then
+            echo "Tag ${{ steps.version.outputs.tag }} already on origin; skipping push."
+          else
+            git push origin "${{ steps.version.outputs.tag }}"
+          fi
 
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "${{ steps.version.outputs.tag }}" \
-            --generate-notes \
-            --title "${{ steps.version.outputs.tag }}"
+          if gh release view "${{ steps.version.outputs.tag }}" >/dev/null 2>&1; then
+            echo "Release ${{ steps.version.outputs.tag }} already exists; skipping."
+          else
+            gh release create "${{ steps.version.outputs.tag }}" \
+              --generate-notes \
+              --title "${{ steps.version.outputs.tag }}"
+          fi
 
-      - name: Publish to npm (via trusted publisher / OIDC)
-        run: npm publish --provenance --access public
+      - name: Publish to npm (trusted publishing if configured, NPM_TOKEN fallback otherwise)
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [[ -n "${NODE_AUTH_TOKEN:-}" ]]; then
+            echo "Publishing with NPM_TOKEN (bootstrap mode)."
+            echo "//registry.npmjs.org/:_authToken=\${NODE_AUTH_TOKEN}" > ~/.npmrc
+          else
+            echo "Publishing via OIDC trusted publishing."
+          fi
+          npm publish --provenance --access public
