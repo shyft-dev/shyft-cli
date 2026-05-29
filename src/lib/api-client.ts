@@ -1,4 +1,5 @@
 import axios, { type AxiosInstance } from 'axios';
+import { gzipSync } from 'node:zlib';
 import { getConfigManager } from './config.js';
 import { DEFAULT_API_URL } from './constants.js';
 
@@ -14,6 +15,38 @@ export class ApiClientError extends Error {
     this.status = status;
     this.details = details;
   }
+}
+
+/**
+ * Gzip a JSON write body so it survives Render's Cloudflare WAF body inspection.
+ *
+ * The WAF 403s any request body that pattern-matches injection traffic — which
+ * user-authored markdown specs/plans (code fences, SQL/HTML snippets) reliably
+ * trigger regardless of size. So by default we gzip EVERY write body, not just
+ * large ones: a 200-byte intent containing "DROP TABLE" is as blockable as a
+ * 15KB one. The server decompresses `Content-Encoding: gzip` transparently.
+ *
+ * Returns a Buffer (axios sends Buffers verbatim — no JSON re-serialization)
+ * plus the headers to merge. `thresholdBytes` can be raised by a caller that
+ * wants to skip compression for trivially small bodies, but it defaults to 0
+ * (always compress) so no write is ever sent in cleartext.
+ *
+ * NOTE: requires a server that decompresses inbound gzip. Ship the API change
+ * first; it is backwards-compatible (still accepts uncompressed bodies).
+ */
+export function gzipJsonBody(
+  payload: unknown,
+  thresholdBytes = 0,
+): { data: Buffer | unknown; headers: Record<string, string> } {
+  const json = JSON.stringify(payload);
+  if (Buffer.byteLength(json, 'utf-8') < thresholdBytes) {
+    return { data: payload, headers: {} };
+  }
+  const data = gzipSync(Buffer.from(json, 'utf-8'));
+  return {
+    data,
+    headers: { 'Content-Type': 'application/json', 'Content-Encoding': 'gzip' },
+  };
 }
 
 function getApiUrl(): string {
@@ -53,6 +86,34 @@ export function createApiClient(requireAuth = true): AxiosInstance {
     (err) => {
       if (err.response) {
         const { status, data } = err.response;
+        const headers = err.response.headers ?? {};
+        const server = String(headers['server'] ?? '').toLowerCase();
+        const contentType = String(headers['content-type'] ?? '').toLowerCase();
+        const reachedOrigin = Boolean(headers['rndr-id'] || headers['x-render-origin-server']);
+        // A Cloudflare HTML response with no Render origin headers means the edge
+        // handled the request itself — it never reached Shyft. Distinguish the
+        // two reasons so we don't tell users to upgrade during an outage:
+        //   403 => a managed WAF rule matched the body (the bug this CLI fixes).
+        //   503 => origin unreachable (deploy/outage), transient.
+        const edgeHandled =
+          server.includes('cloudflare') && contentType.includes('text/html') && !reachedOrigin;
+        if (status === 403 && edgeHandled) {
+          throw new ApiClientError(
+            'Request blocked at the WAF edge before reaching Shyft (HTTP 403). ' +
+              'The payload may have tripped a managed firewall rule. ' +
+              'Update to the latest CLI (`npm i -g @shyft-dev/cli@latest`) or contact support if it persists.',
+            'waf_blocked',
+            status,
+          );
+        }
+        if (status === 503 && edgeHandled) {
+          throw new ApiClientError(
+            'Shyft is temporarily unavailable (HTTP 503) — the API origin could not be reached. ' +
+              'This is usually transient (a deploy or restart); retry in a moment.',
+            'service_unavailable',
+            status,
+          );
+        }
         const apiError = data?.error;
         let message = apiError?.message || data?.message;
         if (!message) {
