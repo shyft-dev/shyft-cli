@@ -1,7 +1,7 @@
 import { Command } from 'commander';
-import { createReadStream, existsSync as fileExists, readFileSync } from 'fs';
+import { existsSync as fileExists, readFileSync } from 'fs';
 import { basename } from 'path';
-import { getApiClient, ApiClientError } from '../lib/api-client.js';
+import { getApiClient, ApiClientError, gzipJsonBody } from '../lib/api-client.js';
 import { getContextManager } from '../lib/context.js';
 import { getProjectConfigManager } from '../lib/project-config.js';
 import { output, info, success, error, isJsonMode } from '../utils/output.js';
@@ -133,10 +133,11 @@ featuresCommand
     const spinner = startSpinner('Creating feature...');
     try {
       const client = getApiClient();
-      const { data } = await client.post(`/products/${productId}/features`, {
+      const { data: enc, headers } = gzipJsonBody({
         title: opts.title,
         intent: opts.intent,
       });
+      const { data } = await client.post(`/products/${productId}/features`, enc, { headers });
       succeedSpinner('Feature created.');
 
       if (isJsonMode()) {
@@ -194,7 +195,8 @@ featuresCommand
     const spinner = startSpinner('Updating feature...');
     try {
       const client = getApiClient();
-      const { data } = await client.patch(`/features/${featureId}`, body);
+      const { data: enc, headers } = gzipJsonBody(body);
+      const { data } = await client.patch(`/features/${featureId}`, enc, { headers });
       succeedSpinner('Feature updated.');
 
       if (isJsonMode()) {
@@ -352,10 +354,8 @@ featuresCommand
     const spinner = startSpinner('Writing plan...');
     try {
       const client = getApiClient();
-      const { data } = await client.put(`/features/${featureId}/plan`, {
-        content,
-        allowOverwrite: opts.allowOverwrite,
-      });
+      const { data: enc, headers } = gzipJsonBody({ content, allowOverwrite: opts.allowOverwrite });
+      const { data } = await client.put(`/features/${featureId}/plan`, enc, { headers });
       succeedSpinner('Plan written.');
 
       if (isJsonMode()) {
@@ -495,16 +495,30 @@ featuresCommand
       process.exit(EXIT_CODES.VALIDATION_ERROR);
     }
 
+    const fileBuffer = readFileSync(opts.file);
+    // Documents go up as a gzipped JSON body (base64-encoded bytes) rather than
+    // multipart: multipart bodies cannot be gzipped through the API's inbound
+    // decompressor, so a multipart upload of markdown would still trip the
+    // Cloudflare WAF. base64 inflates ~33% and the API caps the decoded JSON at
+    // 10MB, so the largest file that fits is ~7MB; larger binaries should use
+    // the web UI (multipart there is not WAF-affected for binary content).
+    const MAX_JSON_UPLOAD_BYTES = 7 * 1024 * 1024;
+    if (fileBuffer.length > MAX_JSON_UPLOAD_BYTES) {
+      error(
+        `File too large for CLI upload (${(fileBuffer.length / 1048576).toFixed(1)}MB; max 7MB). ` +
+          'Upload large files via the Shyft web UI.',
+      );
+      process.exit(EXIT_CODES.VALIDATION_ERROR);
+    }
+
     const spinner = startSpinner('Uploading document...');
     try {
       const client = getApiClient();
-      const FormData = (await import('form-data')).default;
-      const form = new FormData();
-      form.append('file', createReadStream(opts.file), basename(opts.file));
-
-      const { data } = await client.post(`/features/${featureId}/documents`, form, {
-        headers: form.getHeaders(),
+      const { data: enc, headers } = gzipJsonBody({
+        filename: basename(opts.file),
+        contentBase64: fileBuffer.toString('base64'),
       });
+      const { data } = await client.post(`/features/${featureId}/documents/json`, enc, { headers });
       succeedSpinner('Document uploaded.');
 
       if (isJsonMode()) {
